@@ -73,7 +73,7 @@ def diagnose(context):
         out["telegram_dns"] = socket.gethostbyname("api.telegram.org")
     except Exception as e:
         out["telegram_dns"] = f"{type(e).__name__}: {e}"
-    me = tg("getMe", {}, timeout=(4, 6))
+    me = tg("getMe", {}, timeout=(9, 6))
     out["telegram_getMe"] = {"ok": me.get("ok"), "bot": (me.get("result") or {}).get("username"),
                              "error": me.get("error") or me.get("description"), "sec": round(time.time() - t, 1)}
     t = time.time()
@@ -116,7 +116,7 @@ SYSTEM = """Ты — вежливый помощник студии авторс
 Если в базе нет ответа, вопрос про оплату, договор, возврат, индивидуальные условия, жалоба,
 или человек хочет поговорить с живым человеком — ответь, что передал вопрос команде и она скоро ответит,
 и в самом конце добавь метку [ПЕРЕДАТЬ].
-Если человек готов заказать — предложи открыть приложение Lumio (кнопка «Открыть Lumio») и оставить заявку.
+Если человек готов заказать — предложи нажать кнопку «Открыть Lumio» под сообщением и оставить заявку. Не пиши названия кнопок в квадратных скобках.
 Никогда не обещай того, чего нет в базе. Не обсуждай темы, не связанные со студией.
 
 БАЗА ЗНАНИЙ:
@@ -327,7 +327,7 @@ def deliver_order(order, photos, tg_user):
 
 # ---------------------------------------------------------------- entry point
 def respond(code, payload, extra=None):
-    return {"statusCode": code, "headers": {"Content-Type": "application/json", **CORS, **(extra or {})},
+    return {"statusCode": code, "headers": {"Content-Type": "application/json; charset=utf-8", **CORS, **(extra or {})},
             "body": json.dumps(payload, ensure_ascii=False)}
 
 
