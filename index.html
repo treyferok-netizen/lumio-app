@@ -465,7 +465,7 @@ function syncOrder(){
 }
 let files=[];
 $("#f-photos").addEventListener("change",e=>{
-  files=[...e.target.files].slice(0,12);
+  files=[...e.target.files].slice(0,10);
   $("#thumbs").innerHTML="";files.forEach(f=>{const r=new FileReader();r.onload=()=>{const i=new Image();i.src=r.result;i.alt="";$("#thumbs").append(i);};r.readAsDataURL(f);});
 });
 function collect(){
@@ -475,7 +475,7 @@ function collect(){
     name:$("#f-name").value.trim(), contact:$("#f-contact").value.trim(), occasion:occ,
     heroes:$("#f-heroes").value.trim(), story:$("#f-story").value.trim(),
     date: dv?new Date(dv).toLocaleDateString("ru-RU",{day:"numeric",month:"long",year:"numeric"}):"",
-    calc:choice(), photos:files.length,
+    calc:choice(), photos:files.length, source:startSource(),
     tgUser: tg && tg.initDataUnsafe && tg.initDataUnsafe.user ? {id:tg.initDataUnsafe.user.id, username:tg.initDataUnsafe.user.username||""} : null
   };
 }
@@ -496,12 +496,43 @@ ${o.story||"—"}`;
    1) CONFIG.orderEndpoint задан — заявка с фото уходит на сервер бота, бот пересылает её вам.
    2) Mini App открыт кнопкой клавиатуры бота — заявка уходит через Telegram.WebApp.sendData (без фото, до 4 КБ).
    3) Иначе — ручной режим: текст копируется и отправляется в чат. */
+/* откуда пришёл клиент: t.me/LumioMultBot/app?startapp=mama1 → "mama1" */
+function startSource(){
+  try{ const p=tg&&tg.initDataUnsafe&&tg.initDataUnsafe.start_param; if(p) return String(p).slice(0,64); }catch(_){}
+  try{ return (new URLSearchParams(location.search).get("tgWebAppStartParam")||new URLSearchParams(location.search).get("src")||"").slice(0,64); }catch(_){ return ""; }
+}
+/* фото уменьшаем до 1600 px и JPEG ~80%: сервер принимает до ~3,5 МБ на заявку */
+function shrink(file,max=1600,q=0.8){
+  return new Promise(res=>{
+    const url=URL.createObjectURL(file), img=new Image();
+    img.onload=()=>{
+      const k=Math.min(1,max/Math.max(img.naturalWidth,img.naturalHeight));
+      const c=document.createElement("canvas"); c.width=Math.round(img.naturalWidth*k); c.height=Math.round(img.naturalHeight*k);
+      c.getContext("2d").drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(url);
+      c.toBlob(b=>res(b||file),"image/jpeg",q);
+    };
+    img.onerror=()=>{URL.revokeObjectURL(url);res(null);};
+    img.src=url;
+  });
+}
+async function packPhotos(){
+  const out=[]; let total=0;
+  for(const f of files){
+    let b=await shrink(f); if(!b) continue;
+    if(total+b.size>3e6) b=await shrink(f,1000,0.7);
+    if(!b||total+b.size>3e6) break;
+    total+=b.size; out.push(b);
+  }
+  return out;
+}
 async function sendOrder(o){
   if (CONFIG.orderEndpoint) {
     const fd=new FormData();
+    const pics=await packPhotos();
+    o.photos=pics.length;
     fd.append("order",JSON.stringify(o));
     if (tg) fd.append("initData",tg.initData);
-    files.forEach((f,i)=>fd.append("photo"+i,f,f.name));
+    pics.forEach((b,i)=>fd.append("photo"+i,b,"photo"+i+".jpg"));
     const r=await fetch(CONFIG.orderEndpoint,{method:"POST",body:fd});
     if(!r.ok) throw new Error("HTTP "+r.status);
     return "sent";
