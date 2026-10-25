@@ -57,8 +57,9 @@ def tg(method, data=None, files=None, timeout=(5, 12)):
                           files=files, timeout=timeout)
         return r.json()
     except Exception as e:  # network problems must not crash the webhook
-        print("tg error", method, e)
-        return {"ok": False, "error": f"{type(e).__name__}: {e}"[:300]}
+        err = f"{type(e).__name__}: {e}".replace(BOT_TOKEN, "<token>") if BOT_TOKEN else f"{type(e).__name__}: {e}"
+        print("tg error", method, err)
+        return {"ok": False, "error": err[:300]}
 
 
 def diagnose(context):
