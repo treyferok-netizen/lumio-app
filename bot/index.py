@@ -51,14 +51,35 @@ CORS = {
 
 
 # ---------------------------------------------------------------- telegram helpers
-def tg(method, data=None, files=None):
+def tg(method, data=None, files=None, timeout=(5, 12)):
     try:
         r = requests.post(API + method, data=data if files else None, json=None if files else data,
-                          files=files, timeout=20)
+                          files=files, timeout=timeout)
         return r.json()
     except Exception as e:  # network problems must not crash the webhook
         print("tg error", method, e)
-        return {"ok": False}
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"[:300]}
+
+
+def diagnose(context):
+    """Quick self-check, readable in a browser: env vars, Telegram reachability, YandexGPT."""
+    import socket
+    import time
+    out = {"env": {"BOT_TOKEN": bool(BOT_TOKEN), "WEBHOOK_SECRET": bool(SECRET), "PUBLIC_URL": PUBLIC_URL or None,
+                   "ADMIN_CHAT_ID": ADMIN or None, "FOLDER_ID": FOLDER or None,
+                   "service_account_token": bool(iam_headers(context))}}
+    t = time.time()
+    try:
+        out["telegram_dns"] = socket.gethostbyname("api.telegram.org")
+    except Exception as e:
+        out["telegram_dns"] = f"{type(e).__name__}: {e}"
+    me = tg("getMe", {}, timeout=(4, 6))
+    out["telegram_getMe"] = {"ok": me.get("ok"), "bot": (me.get("result") or {}).get("username"),
+                             "error": me.get("error") or me.get("description"), "sec": round(time.time() - t, 1)}
+    t = time.time()
+    ans, need = ask_gpt("Сколько стоит мультфильм на 1 минуту?", context)
+    out["yandexgpt"] = {"answer": ans, "handoff": need, "sec": round(time.time() - t, 1)}
+    return out
 
 
 def send(chat_id, text, **kw):
@@ -126,7 +147,7 @@ def ask_gpt(question, context):
     }
     try:
         r = requests.post("https://llm.api.cloud.yandex.net/foundationModels/v1/completion",
-                          json=body, headers={**auth, "x-folder-id": FOLDER}, timeout=25)
+                          json=body, headers={**auth, "x-folder-id": FOLDER}, timeout=(5, 12))
         r.raise_for_status()
         text = r.json()["result"]["alternatives"][0]["message"]["text"].strip()
     except Exception as e:
@@ -320,6 +341,11 @@ def handler(event, context):
 
     if method == "OPTIONS":
         return {"statusCode": 204, "headers": CORS, "body": ""}
+
+    if src == "diag":
+        if not SECRET or qs.get("key") != SECRET:
+            return respond(403, {"ok": False, "error": "bad key"})
+        return respond(200, diagnose(context))
 
     if src == "setup":
         if not SECRET or qs.get("key") != SECRET:
