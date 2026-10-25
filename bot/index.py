@@ -22,6 +22,8 @@ import html
 import json
 import os
 import re
+import threading
+import time
 import urllib.parse
 from email.parser import BytesParser
 from email.policy import default as email_policy
@@ -167,8 +169,76 @@ GREETING = ("Привет! Я помощник студии <b>Lumio</b> ✨\n\n
             "или просто задайте вопрос здесь.")
 
 
+# ---------------------------------------------------------------- operator mode (per-client state)
+STATE_FILE = os.environ.get("STATE_FILE", "/var/lib/lumio-bot/state.json")
+HUMAN_HOURS = float(os.environ.get("HUMAN_HOURS", "24"))  # back to the bot after this much operator silence
+_lock = threading.Lock()
+
+HUMAN_RE = re.compile(
+    r"(^/(operator|manager|human|оператор|менеджер)\b)|оператор|менеджер|жив(ой|ого|ым) человек|"
+    r"(позов|позв)\w* человек|с человеком|хочу человека|не бот|ты бот|позвоните|перезвоните",
+    re.IGNORECASE)
+
+
+def _load():
+    try:
+        with open(STATE_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def _save(st):
+    try:
+        os.makedirs(os.path.dirname(STATE_FILE) or ".", exist_ok=True)
+        tmp = STATE_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(st, f, ensure_ascii=False)
+        os.replace(tmp, STATE_FILE)
+    except OSError as e:
+        print("state save error", e)
+
+
+def human_mode(client_id):
+    """True if a live operator is handling this client right now."""
+    with _lock:
+        rec = _load().get(str(client_id))
+    if not rec:
+        return False
+    return time.time() - rec.get("ts", 0) < HUMAN_HOURS * 3600
+
+
+def set_mode(client_id, human, name=""):
+    with _lock:
+        st = _load()
+        if human:
+            rec = st.get(str(client_id), {})
+            rec.update({"ts": time.time(), **({"name": name} if name else {})})
+            st[str(client_id)] = rec
+        else:
+            st.pop(str(client_id), None)
+        _save(st)
+
+
+def active_clients():
+    with _lock:
+        st = _load()
+    now = time.time()
+    return [(cid, r) for cid, r in st.items() if now - r.get("ts", 0) < HUMAN_HOURS * 3600]
+
+
+ADMIN_HELP = ("Вы — администратор Lumio.\n\n"
+              "• Заявки и вопросы клиентов приходят сюда.\n"
+              "• Ответить клиенту — ответьте (свайп влево) на его сообщение с меткой #c… текстом, фото или голосовым. "
+              "После вашего ответа бот перестаёт отвечать этому клиенту сам: дальше общаетесь вы.\n"
+              "• <b>/bot</b> — ответом на сообщение клиента: вернуть его боту.\n"
+              "• <b>/human</b> — ответом на сообщение клиента: забрать на себя без ответа.\n"
+              "• <b>/active</b> — с кем вы сейчас на связи.\n"
+              f"• Если вы молчите {int(HUMAN_HOURS)} ч, клиент сам возвращается к боту.")
+
+
 def handle_admin(msg):
-    text = msg.get("text") or ""
+    text = (msg.get("text") or "").strip()
     rep = msg.get("reply_to_message")
     if rep:
         src = (rep.get("text") or "") + " " + (rep.get("caption") or "")
@@ -177,18 +247,49 @@ def handle_admin(msg):
             send(ADMIN, "Не нашёл, кому ответить: отвечайте на сообщение с меткой #c…")
             return
         client = m.group(1)
+        if text.lower() in ("/bot", "/бот"):
+            set_mode(client, False)
+            send(ADMIN, f"🤖 Клиент #c{client} снова общается с ботом.", reply_to_message_id=msg["message_id"])
+            return
+        if text.lower() in ("/human", "/я"):
+            set_mode(client, True)
+            send(ADMIN, f"👤 Клиент #c{client} теперь на вас — бот ему не отвечает.",
+                 reply_to_message_id=msg["message_id"])
+            return
         res = tg("copyMessage", {"chat_id": client, "from_chat_id": msg["chat"]["id"],
                                  "message_id": msg["message_id"]})
-        send(ADMIN, "✓ Отправлено клиенту" if res.get("ok") else
-             "Не удалось отправить: клиент мог заблокировать бота.",
-             reply_to_message_id=msg["message_id"])
+        if res.get("ok"):
+            was = human_mode(client)
+            set_mode(client, True)
+            send(ADMIN, "✓ Отправлено. " + ("" if was else
+                 "Бот больше не отвечает этому клиенту сам — дальше общаетесь вы. Вернуть боту: /bot ответом."),
+                 reply_to_message_id=msg["message_id"])
+        else:
+            send(ADMIN, "Не удалось отправить: клиент мог заблокировать бота.",
+                 reply_to_message_id=msg["message_id"])
+        return
+    if text.lower().startswith("/active"):
+        rows = active_clients()
+        if not rows:
+            send(ADMIN, "Сейчас вы ни с кем не на связи — всем отвечает бот.")
+        else:
+            send(ADMIN, "👤 Вы на связи с:\n" + "\n".join(
+                f"• {esc(r.get('name') or 'клиент')} #c{cid}" for cid, r in rows) +
+                "\n\nВернуть клиента боту: ответьте /bot на его сообщение.")
         return
     if text.startswith("/"):
-        send(ADMIN, "Вы — администратор Lumio.\n\n"
-                    "• Заявки из Mini App и вопросы клиентов приходят сюда.\n"
-                    "• Чтобы ответить клиенту, ответьте (свайп влево) на его сообщение с меткой #c… "
-                    "— текстом, фото или голосовым.\n"
-                    f"• Ваш chat id: <code>{msg['chat']['id']}</code>")
+        send(ADMIN, ADMIN_HELP + f"\n\nВаш chat id: <code>{msg['chat']['id']}</code>")
+
+
+def forward_to_admin(msg, user, head):
+    chat_id = msg["chat"]["id"]
+    tag = f"#c{chat_id}"
+    text = (msg.get("text") or msg.get("caption") or "").strip()
+    if msg.get("text"):
+        send(ADMIN, f"{head} — {who(user)} {tag}\n\n{esc(text)}")
+    else:
+        send(ADMIN, f"{head} — {who(user)} {tag}" + (f"\n\n{esc(text)}" if text else ""))
+        tg("copyMessage", {"chat_id": ADMIN, "from_chat_id": chat_id, "message_id": msg["message_id"]})
 
 
 def handle_client(msg, context):
@@ -196,6 +297,7 @@ def handle_client(msg, context):
     user = msg.get("from", {})
     text = (msg.get("text") or msg.get("caption") or "").strip()
     tag = f"#c{chat_id}"
+    name = " ".join(x for x in [user.get("first_name"), user.get("last_name")] if x)
 
     if text.startswith("/myid"):
         send(chat_id, f"Ваш chat id: <code>{chat_id}</code>")
@@ -215,13 +317,28 @@ def handle_client(msg, context):
         deliver_order(order, [], {"id": chat_id, "username": user.get("username", "")})
         return
 
+    # 1) a live operator already handles this client -> just pass messages through
+    if ADMIN and human_mode(chat_id):  # timer counts from the operator's last reply, not the client's
+        forward_to_admin(msg, user, "👤 Клиент пишет вам")
+        return
+
+    # 2) the client asks for a human
+    if ADMIN and text and HUMAN_RE.search(text):
+        set_mode(chat_id, True, name)
+        send(chat_id, "Позвал менеджера Lumio 🤍 Он ответит здесь же, обычно в течение часа. "
+                      "Пока можно написать подробности — всё передам.")
+        forward_to_admin(msg, user, "🙋 <b>Клиент просит живого человека</b>")
+        send(ADMIN, "Бот этому клиенту больше не отвечает. Ответьте свайпом на его сообщение.")
+        return
+
     if not text:  # photo / voice / sticker without words
         send(chat_id, "Спасибо! Передал команде — скоро ответим 🤍")
         if ADMIN:
-            send(ADMIN, f"📎 Сообщение от {who(user)} {tag}\nОтветьте на это сообщение, чтобы ответить клиенту.")
-            tg("forwardMessage", {"chat_id": ADMIN, "from_chat_id": chat_id, "message_id": msg["message_id"]})
+            set_mode(chat_id, True, name)
+            forward_to_admin(msg, user, "📎 Сообщение от клиента")
         return
 
+    # 3) the bot answers
     tg("sendChatAction", {"chat_id": chat_id, "action": "typing"})
     answer, need_human = ask_gpt(text, context)
     if answer:
@@ -229,9 +346,12 @@ def handle_client(msg, context):
     else:
         send(chat_id, "Спасибо за вопрос! Передал его команде Lumio — ответим совсем скоро 🤍")
     if ADMIN:
+        if need_human:
+            set_mode(chat_id, True, name)
         head = "⚠️ <b>Нужен ваш ответ</b>" if need_human else "💬 Вопрос клиента"
         body = (f"{head} — {who(user)} {tag}\n\n<b>Вопрос:</b> {esc(text)}"
                 + (f"\n\n<b>Бот ответил:</b> {esc(answer)}" if answer else "")
+                + ("\n\nБот передал клиента вам и больше ему не отвечает." if need_human else "")
                 + "\n\nОтветьте на это сообщение, чтобы написать клиенту.")
         send(ADMIN, body)
 
@@ -354,7 +474,7 @@ def handler(event, context):
         hook = tg("setWebhook", {"url": f"{PUBLIC_URL}?src=tg", "secret_token": SECRET,
                                  "allowed_updates": ["message"], "drop_pending_updates": True})
         cmds = tg("setMyCommands", {"commands": [{"command": "start", "description": "Начать"},
-                                                 {"command": "myid", "description": "Мой chat id"}]})
+                                                 {"command": "operator", "description": "Связаться с менеджером"}]})
         return respond(200, {"webhook": hook, "commands": cmds, "admin_set": bool(ADMIN),
                              "gpt_ready": bool(FOLDER and (API_KEY or iam_headers(context)))})
 

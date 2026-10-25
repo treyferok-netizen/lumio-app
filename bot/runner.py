@@ -29,7 +29,7 @@ def poll():
     me = index.tg("getMe", {})
     print("polling as", (me.get("result") or {}).get("username"), "ok" if me.get("ok") else me, flush=True)
     index.tg("setMyCommands", {"commands": [{"command": "start", "description": "Начать"},
-                                            {"command": "myid", "description": "Мой chat id"}]})
+                                            {"command": "operator", "description": "Связаться с менеджером"}]})
     offset = None
     while True:
         q = {"timeout": 50, "allowed_updates": ["message"]}
