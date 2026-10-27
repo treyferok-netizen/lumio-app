@@ -28,9 +28,8 @@ def poll():
     index.tg("deleteWebhook", {"drop_pending_updates": False})
     me = index.tg("getMe", {})
     print("polling as", (me.get("result") or {}).get("username"), "ok" if me.get("ok") else me, flush=True)
-    index.tg("setMyCommands", {"commands": [{"command": "start", "description": "Начать"},
-                                            {"command": "sketch", "description": "Бесплатный эскиз героя"},
-                                            {"command": "operator", "description": "Связаться с менеджером"}]})
+    prof = index.setup_profile()
+    print("profile", {k: v.get("ok") for k, v in prof.items()}, flush=True)
     offset = None
     while True:
         q = {"timeout": 50, "allowed_updates": ["message", "callback_query"]}

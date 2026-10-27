@@ -153,6 +153,10 @@ def handle_callback(cq):
     user = cq.get("from") or {}
     uid = user.get("id")
     msg = cq.get("message") or {}
+    if cq.get("data") == "sketch":
+        tg("answerCallbackQuery", {"callback_query_id": cq["id"]})
+        sketch_offer(uid, user)
+        return
     if cq.get("data") not in ("sub_check", "sketch_check"):
         tg("answerCallbackQuery", {"callback_query_id": cq["id"]})
         return
@@ -234,12 +238,40 @@ def ask_gpt(question, context):
 
 
 # ---------------------------------------------------------------- telegram updates
-GREETING = ("Привет! Я помощник студии <b>Lumio</b> ✨\n\n"
-            "Мы превращаем истории вашей семьи в волшебные мультфильмы: сценарий, герой по фото, "
-            "озвучка и музыка.\n\n"
-            f"🎁 Подписчикам нашего канала {CHANNEL} — эскиз героя бесплатно, до оплаты (/sketch).\n\n"
-            "Нажмите «Открыть Lumio», чтобы посмотреть мультфильмы и рассчитать цену, "
-            "или просто задайте вопрос здесь.")
+GREETING = ("Привет! Вы в <b>Lumio</b> ✨ — студии мультфильмов по вашим историям.\n\n"
+            "Рисуем вашу семью мультяшными героями по фото и снимаем про вас настоящий мультфильм: "
+            "сценарий, анимация, озвучка и музыка. Ко Дню матери, дню рождения, Новому году — или просто так.\n\n"
+            "<b>Что можно сделать здесь:</b>\n"
+            "🎬 посмотреть наши мультфильмы и рассчитать цену — кнопка «Открыть Lumio»\n"
+            f"🎁 забрать бесплатный эскиз героя — для подписчиков канала {CHANNEL}\n"
+            "💬 задать любой вопрос — просто напишите его сюда, я отвечу сразу. "
+            "Нужен живой человек — /operator")
+
+# что человек видит в пустом чате ДО нажатия «Старт» (до 512 символов) и в профиле бота (до 120)
+DESCRIPTION = ("✨ Lumio — мультфильмы по вашей истории.\n\n"
+               "Рисуем вашу семью мультяшными героями по фото и снимаем про вас настоящий мультфильм — "
+               "ко Дню матери, дню рождения, Новому году.\n\n"
+               "Здесь можно:\n"
+               "🎬 посмотреть наши мультфильмы и узнать цену\n"
+               "🎁 получить бесплатный эскиз героя\n"
+               "💬 задать вопрос — отвечаем сразу\n\n"
+               "Нажмите «Старт» 👇")
+SHORT_DESCRIPTION = "Мультфильмы по вашей истории: ваша семья — главные герои ✨ Бесплатный эскиз героя подписчикам."
+COMMANDS = [{"command": "start", "description": "Начать"},
+            {"command": "sketch", "description": "Бесплатный эскиз героя"},
+            {"command": "operator", "description": "Связаться с менеджером"}]
+
+
+def setup_profile():
+    """Описание, короткое описание и меню команд бота. Вызывается при каждом запуске."""
+    return {"commands": tg("setMyCommands", {"commands": COMMANDS}),
+            "description": tg("setMyDescription", {"description": DESCRIPTION}),
+            "short": tg("setMyShortDescription", {"short_description": SHORT_DESCRIPTION})}
+
+
+def greeting_markup():
+    return {"inline_keyboard": [[{"text": "✨ Открыть Lumio", "web_app": {"url": WEBAPP_PAGE}}],
+                                [{"text": "🎁 Бесплатный эскиз героя", "callback_data": "sketch"}]]}
 
 
 # ---------------------------------------------------------------- operator mode (per-client state)
@@ -376,12 +408,15 @@ def handle_client(msg, context):
         send(chat_id, f"Ваш chat id: <code>{chat_id}</code>")
         return
     if text.startswith("/sketch") or text.startswith("/start sketch"):
+        if text.startswith("/start"):
+            send(chat_id, "Привет! Вы в <b>Lumio</b> ✨ — студии мультфильмов по вашим историям: "
+                          "рисуем вашу семью мультяшными героями и снимаем про вас настоящий мультфильм.")
         sketch_offer(chat_id, user)
         if ADMIN and text.startswith("/start"):
             send(ADMIN, f"👋 Новый человек в боте (за эскизом): {who(user)} {tag}")
         return
     if text.startswith("/start"):
-        send(chat_id, GREETING, reply_markup=open_app_markup())
+        send(chat_id, GREETING, reply_markup=greeting_markup())
         if ADMIN:
             send(ADMIN, f"👋 Новый человек в боте: {who(user)} {tag}")
         return
@@ -566,9 +601,7 @@ def handler(event, context):
             return respond(403, {"ok": False, "error": "bad key"})
         hook = tg("setWebhook", {"url": f"{PUBLIC_URL}?src=tg", "secret_token": SECRET,
                                  "allowed_updates": ["message", "callback_query"], "drop_pending_updates": True})
-        cmds = tg("setMyCommands", {"commands": [{"command": "start", "description": "Начать"},
-                                                 {"command": "sketch", "description": "Бесплатный эскиз героя"},
-                                                 {"command": "operator", "description": "Связаться с менеджером"}]})
+        cmds = setup_profile()
         return respond(200, {"webhook": hook, "commands": cmds, "admin_set": bool(ADMIN),
                              "gpt_ready": bool(FOLDER and (API_KEY or iam_headers(context)))})
 
