@@ -233,6 +233,8 @@ input::placeholder,textarea::placeholder{color:#6f6695}
 
       <div class="field"><label class="label" for="f-occasion">Повод</label>
         <select id="f-occasion"></select></div>
+      <div class="field" id="otherWrap" hidden><label class="label" for="f-other">Какой повод?</label>
+        <input type="text" id="f-other" maxlength="80" placeholder="Например: выпускной в садике, проводы на пенсию"></div>
 
       <div class="field"><label class="label" for="f-heroes">Кто герои мультфильма</label>
         <input type="text" id="f-heroes" placeholder="Например: дочка 5 лет, мама, папа и кот"></div>
@@ -327,7 +329,8 @@ const CONFIG = {
     {id:"love",     name:"История любви"},
     {id:"family",   name:"Семейная история"},
     {id:"memory",   name:"В память о близком"},
-    {id:"business", name:"Для бизнеса"}
+    {id:"business", name:"Для бизнеса"},
+    {id:"other",    name:"Другой повод"}
   ],
   lengths: [
     {id:"30", name:"30 секунд", price:3900, days:4},
@@ -468,7 +471,8 @@ renderCalc();
 
 /* order */
 $("#f-occasion").innerHTML=CONFIG.occasions.map(o=>`<option value="${o.id}">${o.name}</option>`).join("");
-$("#f-occasion").addEventListener("change",e=>{state.occasion=e.target.value;renderCalc();});
+const syncOther=()=>{$("#otherWrap").hidden=$("#f-occasion").value!=="other";};
+$("#f-occasion").addEventListener("change",e=>{state.occasion=e.target.value;syncOther();renderCalc();});
 function choice(){
   const L=CONFIG.lengths.find(l=>l.id===state.length),H=CONFIG.heroes.find(h=>h.id===state.heroes);
   const ex=CONFIG.extras.filter(e=>state.extras.has(e.id)).map(e=>e.name.toLowerCase());
@@ -476,7 +480,7 @@ function choice(){
     text:`${L.name}, ${H.name.toLowerCase()}${ex.length?", "+ex.join(", "):""} — ${rub(calc().sum)}`};
 }
 function syncOrder(){
-  $("#f-occasion").value=state.occasion;
+  $("#f-occasion").value=state.occasion; syncOther();
   $("#calcNote").innerHTML=`Из калькулятора: <b style="color:var(--star)">${choice().text}</b>. Поменять можно во вкладке «Цена».`;
 }
 let files=[];
@@ -485,7 +489,8 @@ $("#f-photos").addEventListener("change",e=>{
   $("#thumbs").innerHTML="";files.forEach(f=>{const r=new FileReader();r.onload=()=>{const i=new Image();i.src=r.result;i.alt="";$("#thumbs").append(i);};r.readAsDataURL(f);});
 });
 function collect(){
-  const occ=CONFIG.occasions.find(o=>o.id===$("#f-occasion").value).name;
+  const oid=$("#f-occasion").value, other=$("#f-other").value.trim();
+  const occ=oid==="other"?(other?"Другое: "+other:"Другой повод"):CONFIG.occasions.find(o=>o.id===oid).name;
   const dv=$("#f-date").value;
   return {
     name:$("#f-name").value.trim(), contact:$("#f-contact").value.trim(), occasion:occ,
