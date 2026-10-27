@@ -225,6 +225,7 @@ input::placeholder,textarea::placeholder{color:#6f6695}
       <h1>Расскажите свою историю</h1>
       <p class="muted small">Это займёт 3 минуты. Ответим в течение часа.</p>
     </div>
+    <div class="notice" id="sketchNote" hidden>🎁 <b style="color:var(--star)">Бесплатный эскиз героя.</b> Добавьте ниже 2–3 фото (лицо крупно, при хорошем свете) и пару слов, для кого мультфильм. Нарисуем и покажем до оплаты.</div>
 
     <form id="orderForm" class="stack" style="gap:14px" novalidate>
       <div class="field"><label class="label" for="f-name">Как к вам обращаться</label>
@@ -578,6 +579,8 @@ $("#orderForm").addEventListener("submit",async e=>{
 });
 $("#editBtn").addEventListener("click",()=>{$("#orderForm").hidden=false;$("#manual").hidden=true;});
 $("#chatBtn").addEventListener("click",openChat);
+/* бесплатный эскиз: ?src=sketch, #sketch или startapp=sketch -> сразу форма заявки с фото */
+if(startSource()==="sketch"||location.hash==="#sketch"){ $("#sketchNote").hidden=false; go("order"); }
 $("#copyBtn").addEventListener("click",()=>{
   const t=$("#summary").textContent,b=$("#copyBtn");
   const ok=()=>{b.textContent="Скопировано";setTimeout(()=>b.textContent="Скопировать",1800);};

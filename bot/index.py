@@ -107,6 +107,11 @@ def open_app_markup():
     return {"inline_keyboard": [[{"text": "✨ Открыть Lumio", "web_app": {"url": WEBAPP_PAGE}}]]}
 
 
+def sketch_app_markup():
+    url = WEBAPP_PAGE + ("&" if "?" in WEBAPP_PAGE else "?") + "src=sketch#sketch"
+    return {"inline_keyboard": [[{"text": "📸 Загрузить фото для эскиза", "web_app": {"url": url}}]]}
+
+
 # ---------------------------------------------------------------- channel subscription (bonus: priority)
 def is_subscribed(user_id):
     """True / False — подписан ли на канал; None — проверить нельзя (бот не админ канала, сеть)."""
@@ -126,8 +131,9 @@ def subscribe_markup(data="sub_check"):
                                 [{"text": "✅ Я подписался", "callback_data": data}]]}
 
 
-SKETCH_OK = ("🎁 Бесплатный эскиз ваш!\n\nОткройте Lumio и оставьте заявку: 2–3 фото героя (лицо крупно, "
-             "при хорошем свете) и пару слов, для кого мультфильм. Нарисуем героя и покажем до оплаты.")
+SKETCH_OK = ("🎁 Бесплатный эскиз ваш!\n\nНажмите кнопку ниже — откроется заявка. Добавьте 2–3 фото героя "
+             "(лицо крупно, при хорошем свете) и пару слов, для кого мультфильм. Нарисуем героя и покажем до оплаты.\n\n"
+             "Удобнее здесь? Просто пришлите фото в этот чат — передадим художнику.")
 SKETCH_ASK = (f"🎁 Эскиз героя бесплатно — для подписчиков нашего канала {CHANNEL}.\n\n"
               "Подпишитесь и нажмите «Я подписался» — и эскиз ваш.")
 
@@ -138,7 +144,7 @@ def sketch_offer(chat_id, user):
     if sub is False:
         send(chat_id, SKETCH_ASK, reply_markup=subscribe_markup("sketch_check"))
         return
-    send(chat_id, SKETCH_OK, reply_markup=open_app_markup())
+    send(chat_id, SKETCH_OK, reply_markup=sketch_app_markup())
     if ADMIN and sub:
         send(ADMIN, f"🎁 Подписчик забирает бесплатный эскиз — {who(user)} #c{chat_id}")
 
@@ -157,7 +163,7 @@ def handle_callback(cq):
             tg("editMessageReplyMarkup", {"chat_id": msg["chat"]["id"], "message_id": msg["message_id"],
                                           "reply_markup": {"inline_keyboard": []}})
         if cq.get("data") == "sketch_check":
-            send(uid, SKETCH_OK, reply_markup=open_app_markup())
+            send(uid, SKETCH_OK, reply_markup=sketch_app_markup())
         else:
             send(uid, "Спасибо за подписку! 🎁 Эскиз героя для вас — бесплатно: нарисуем и покажем до оплаты.")
         if ADMIN:
