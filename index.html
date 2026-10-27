@@ -259,12 +259,14 @@ input::placeholder,textarea::placeholder{color:#6f6695}
       <label class="consent"><input type="checkbox" id="f-consent">Согласен(на) на обработку персональных данных, включая фотографии</label>
       <p class="small" id="formErr" style="color:var(--rose)" hidden></p>
       <button class="btn btn-gold" type="submit" id="sendBtn">Отправить заявку</button>
+      <p class="small muted" style="text-align:center;margin:0">⭐ Подписчикам канала <a href="https://t.me/lumioRF" id="chanLink" style="color:var(--lantern)">@lumioRF</a> — заявка в приоритете</p>
     </form>
 
     <!-- заявка ушла через бота -->
     <div class="stack" id="sent" hidden>
       <span class="done">Заявка отправлена</span>
       <p class="muted">Спасибо! Сказочник Lumio напишет вам в течение часа и пришлёт эскиз героя.</p>
+      <p class="small muted">⭐ Подпишитесь на канал <a href="https://t.me/lumioRF" class="chanLink" style="color:var(--lantern)">@lumioRF</a> — и мы возьмём заявку в работу в первую очередь.</p>
       <button class="btn btn-ghost" data-go="home" type="button">На главную</button>
     </div>
 
@@ -358,6 +360,7 @@ const tg = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.i
 if (tg) { try { tg.ready(); tg.expand(); tg.setHeaderColor && tg.setHeaderColor("#15122b"); tg.setBackgroundColor && tg.setBackgroundColor("#15122b"); } catch (_) {} }
 const buzz = () => { try { tg && tg.HapticFeedback && tg.HapticFeedback.selectionChanged(); } catch (_) {} };
 const openExternal = url => { if (tg && tg.openLink) tg.openLink(url); else window.open(url, "_blank", "noopener"); };
+document.addEventListener("click",e=>{const a=e.target.closest("#chanLink,.chanLink"); if(!a)return; e.preventDefault(); if(tg&&tg.openTelegramLink) tg.openTelegramLink(a.href); else window.open(a.href,"_blank","noopener");});
 const openChat = () => { const u = "https://t.me/" + CONFIG.contact; if (tg && tg.openTelegramLink) tg.openTelegramLink(u); else window.open(u, "_blank", "noopener"); };
 
 const rub = n => n.toLocaleString("ru-RU") + " ₽";

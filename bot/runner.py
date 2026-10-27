@@ -32,7 +32,7 @@ def poll():
                                             {"command": "operator", "description": "Связаться с менеджером"}]})
     offset = None
     while True:
-        q = {"timeout": 50, "allowed_updates": ["message"]}
+        q = {"timeout": 50, "allowed_updates": ["message", "callback_query"]}
         if offset is not None:
             q["offset"] = offset
         res = index.tg("getUpdates", q, timeout=(10, 65))
