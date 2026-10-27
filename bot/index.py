@@ -14,7 +14,7 @@ Environment variables:
   GPT_MODEL        optional, default "yandexgpt-lite/latest"
   YANDEX_API_KEY   optional; if empty, the function's service account token is used
   MINIAPP_URL      optional, default https://t.me/LumioMultBot/app
-  CHANNEL          optional, default @lumioRF — подписчикам канала заявка в приоритете
+  CHANNEL          optional, default @lumioRF — подписчикам канала эскиз героя бесплатно
 """
 import base64
 import hashlib
@@ -121,27 +121,47 @@ def is_subscribed(user_id):
     return st in ("creator", "administrator", "member") or (st == "restricted" and bool(m.get("is_member")))
 
 
-def subscribe_markup():
+def subscribe_markup(data="sub_check"):
     return {"inline_keyboard": [[{"text": "📢 Подписаться на канал", "url": CHANNEL_URL}],
-                                [{"text": "✅ Я подписался", "callback_data": "sub_check"}]]}
+                                [{"text": "✅ Я подписался", "callback_data": data}]]}
+
+
+SKETCH_OK = ("🎁 Бесплатный эскиз ваш!\n\nОткройте Lumio и оставьте заявку: 2–3 фото героя (лицо крупно, "
+             "при хорошем свете) и пару слов, для кого мультфильм. Нарисуем героя и покажем до оплаты.")
+SKETCH_ASK = (f"🎁 Эскиз героя бесплатно — для подписчиков нашего канала {CHANNEL}.\n\n"
+              "Подпишитесь и нажмите «Я подписался» — и эскиз ваш.")
+
+
+def sketch_offer(chat_id, user):
+    """/start sketch или /sketch: подписан -> открыть заявку, нет -> предложить подписку."""
+    sub = is_subscribed(user.get("id"))
+    if sub is False:
+        send(chat_id, SKETCH_ASK, reply_markup=subscribe_markup("sketch_check"))
+        return
+    send(chat_id, SKETCH_OK, reply_markup=open_app_markup())
+    if ADMIN and sub:
+        send(ADMIN, f"🎁 Подписчик забирает бесплатный эскиз — {who(user)} #c{chat_id}")
 
 
 def handle_callback(cq):
     user = cq.get("from") or {}
     uid = user.get("id")
     msg = cq.get("message") or {}
-    if cq.get("data") != "sub_check":
+    if cq.get("data") not in ("sub_check", "sketch_check"):
         tg("answerCallbackQuery", {"callback_query_id": cq["id"]})
         return
     sub = is_subscribed(uid)
     if sub:
-        tg("answerCallbackQuery", {"callback_query_id": cq["id"], "text": "Спасибо! Заявка в приоритете ⭐"})
+        tg("answerCallbackQuery", {"callback_query_id": cq["id"], "text": "Спасибо за подписку! 🎁"})
         if msg:
             tg("editMessageReplyMarkup", {"chat_id": msg["chat"]["id"], "message_id": msg["message_id"],
                                           "reply_markup": {"inline_keyboard": []}})
-        send(uid, "Спасибо за подписку! ⭐ Ваша заявка теперь в приоритете — возьмём её в работу в первую очередь.")
+        if cq.get("data") == "sketch_check":
+            send(uid, SKETCH_OK, reply_markup=open_app_markup())
+        else:
+            send(uid, "Спасибо за подписку! 🎁 Эскиз героя для вас — бесплатно: нарисуем и покажем до оплаты.")
         if ADMIN:
-            send(ADMIN, f"⭐ <b>Клиент подписался на канал</b> — {who(user)} #c{uid}\nЕго заявка — в приоритет.")
+            send(ADMIN, f"🎁 <b>Клиент подписался на канал</b> — {who(user)} #c{uid}\nЭскиз ему — бесплатно, до оплаты.")
     elif sub is False:
         tg("answerCallbackQuery", {"callback_query_id": cq["id"], "show_alert": True,
                                    "text": "Пока не вижу подписки. Подпишитесь на канал и нажмите кнопку ещё раз 🤍"})
@@ -210,8 +230,8 @@ def ask_gpt(question, context):
 # ---------------------------------------------------------------- telegram updates
 GREETING = ("Привет! Я помощник студии <b>Lumio</b> ✨\n\n"
             "Мы превращаем истории вашей семьи в волшебные мультфильмы: сценарий, герой по фото, "
-            "озвучка и музыка. Эскиз героя — бесплатно.\n\n"
-            f"⭐ Подписчикам нашего канала {CHANNEL} — заявка в приоритете.\n\n"
+            "озвучка и музыка.\n\n"
+            f"🎁 Подписчикам нашего канала {CHANNEL} — эскиз героя бесплатно, до оплаты (/sketch).\n\n"
             "Нажмите «Открыть Lumio», чтобы посмотреть мультфильмы и рассчитать цену, "
             "или просто задайте вопрос здесь.")
 
@@ -349,6 +369,11 @@ def handle_client(msg, context):
     if text.startswith("/myid"):
         send(chat_id, f"Ваш chat id: <code>{chat_id}</code>")
         return
+    if text.startswith("/sketch") or text.startswith("/start sketch"):
+        sketch_offer(chat_id, user)
+        if ADMIN and text.startswith("/start"):
+            send(ADMIN, f"👋 Новый человек в боте (за эскизом): {who(user)} {tag}")
+        return
     if text.startswith("/start"):
         send(chat_id, GREETING, reply_markup=open_app_markup())
         if ADMIN:
@@ -467,7 +492,8 @@ def order_text(o, tg_user, sub=None):
     if tg_user and tg_user.get("id"):
         un = tg_user.get("username")
         lines.append(f"<b>Telegram:</b> " + (f"@{esc(un)} " if un else "") + f"#c{tg_user['id']}")
-        lines.append({True: "⭐ <b>Подписчик канала — приоритет</b>", False: "Канал: не подписан",
+        lines.append({True: "🎁 <b>Подписчик канала — эскиз бесплатно</b>",
+                      False: "Канал: не подписан — эскиз после предоплаты",
                       None: "Канал: проверить не удалось (бот должен быть админом канала)"}[sub])
     lines += ["", "<b>История:</b>", esc(o.get("story") or "—")]
     return "\n".join(lines)[:4000]
@@ -495,12 +521,13 @@ def deliver_order(order, photos, tg_user):
         tg("sendMediaGroup", {"chat_id": ADMIN, "media": json.dumps(media)}, files=files)
     if tg_user and tg_user.get("id"):
         thanks = (f"Спасибо, {esc(order.get('name') or '')}! Заявка получена 🤍\n"
-                  "Сказочник Lumio напишет вам в течение часа и пришлёт эскиз героя.")
+                  "Сказочник Lumio напишет вам в течение часа.")
         if sub:
-            send(tg_user["id"], thanks + "\n\n⭐ Вы подписаны на наш канал — заявка в приоритете.")
+            send(tg_user["id"], thanks + "\n\n🎁 Вы подписаны на наш канал — эскиз героя для вас бесплатно, "
+                                         "покажем его до оплаты.")
         elif sub is False:
-            send(tg_user["id"], thanks + "\n\n⭐ Подпишитесь на наш канал — и мы возьмём вашу заявку "
-                                         "в работу в первую очередь.", reply_markup=subscribe_markup())
+            send(tg_user["id"], thanks + f"\n\n🎁 Подпишитесь на наш канал {CHANNEL} — и эскиз героя будет "
+                                         "бесплатно, до оплаты.", reply_markup=subscribe_markup())
         else:
             send(tg_user["id"], thanks)
     return bool(res.get("ok"))
@@ -534,6 +561,7 @@ def handler(event, context):
         hook = tg("setWebhook", {"url": f"{PUBLIC_URL}?src=tg", "secret_token": SECRET,
                                  "allowed_updates": ["message", "callback_query"], "drop_pending_updates": True})
         cmds = tg("setMyCommands", {"commands": [{"command": "start", "description": "Начать"},
+                                                 {"command": "sketch", "description": "Бесплатный эскиз героя"},
                                                  {"command": "operator", "description": "Связаться с менеджером"}]})
         return respond(200, {"webhook": hook, "commands": cmds, "admin_set": bool(ADMIN),
                              "gpt_ready": bool(FOLDER and (API_KEY or iam_headers(context)))})
