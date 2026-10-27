@@ -157,8 +157,8 @@ input::placeholder,textarea::placeholder{color:#6f6695}
     <div class="ny">
       <div class="days"><span id="nyDays">0</span><small id="nyWord">дней</small></div>
       <div class="stack" style="gap:2px">
-        <b>Мультфильм к Новому году</b>
-        <span class="small muted">Новогодние заказы принимаем до 10 декабря — успеем к празднику.</span>
+        <b id="nyTitle">Мультфильм к Новому году</b>
+        <span class="small muted" id="nyText">Новогодние заказы принимаем до 10 декабря — успеем к празднику.</span>
       </div>
     </div>
 
@@ -308,9 +308,17 @@ const CONFIG = {
   siteUrl: "https://claude.ai/artifact/4JZQNyqDd1r75BAoTeov7M#works", // запасной вариант, если у ролика нет файла film
   orderEndpoint: "https://193-32-178-96.sslip.io/order",                         // адрес сервера бота: сюда уходит заявка с фото (POST multipart)
   nyDeadline: "2026-12-10",
+  // ближайший праздник для плашки на главной: показывается первый, у которого дедлайн ещё не прошёл
+  holidays: [
+    {until:"2026-11-20", occasion:"mom", title:"Мультфильм ко Дню матери",
+     text:"День матери — 29 ноября. Заказы принимаем до 20 ноября — успеем к празднику."},
+    {until:"2026-12-10", occasion:"newyear", title:"Мультфильм к Новому году",
+     text:"Новогодние заказы принимаем до 10 декабря — успеем к празднику."}
+  ],
   // цены — те же, что в калькуляторе на сайте
   occasions: [
     {id:"birthday", name:"День рождения"},
+    {id:"mom",      name:"День матери"},
     {id:"newyear",  name:"Новый год"},
     {id:"wedding",  name:"Свадьба"},
     {id:"love",     name:"История любви"},
@@ -336,6 +344,7 @@ const CONFIG = {
     {id:"rush",  name:"Срочно — за 3 дня",      pct:30}
   ],
   works: [
+    {cat:"family", title:"Мама рядом",                  meta:"Ко Дню матери", dur:"1:34", pv:"media/pv_mama.mp4", po:"media/po_mama.jpg", film:"media/film_mama.mp4"},
     {cat:"family", title:"Соня и звёздный кит",         meta:"Семейная сказка", dur:"1:08", pv:"media/pv_sonya.mp4", po:"media/po_sonya.jpg", film:"media/film_sonya.mp4"},
     {cat:"author", title:"Космонавт из коробки",        meta:"Авторская история", dur:"2:08", pv:"media/pv_cosmo.mp4", po:"media/po_cosmo.jpg", film:"media/film_cosmo.mp4"},
     {cat:"author", title:"Люмик — хранитель огоньков",  meta:"Авторская история", dur:"0:38", pv:"media/pv_lumik.mp4", po:"media/po_lumik.jpg", film:"media/film_lumik.mp4"},
@@ -377,7 +386,10 @@ function go(tab){
 document.addEventListener("click",e=>{const g=e.target.closest("[data-go],[data-tab]");if(g){buzz();go(g.dataset.go||g.dataset.tab);}});
 
 /* countdown + min price */
-const left=Math.max(0,Math.ceil((new Date(CONFIG.nyDeadline+"T23:59:00")-new Date())/864e5));
+const hol=CONFIG.holidays.find(h=>new Date(h.until+"T23:59:00")>new Date())||CONFIG.holidays[CONFIG.holidays.length-1];
+$("#nyTitle").textContent=hol.title; $("#nyText").textContent=hol.text;
+if(CONFIG.occasions.some(o=>o.id===hol.occasion)) state.occasion=hol.occasion;
+const left=Math.max(0,Math.ceil((new Date(hol.until+"T23:59:00")-new Date())/864e5));
 $("#nyDays").textContent=left;
 $("#nyWord").textContent=(n=>{const a=n%10,b=n%100;return a===1&&b!==11?"день":a>=2&&a<=4&&(b<12||b>14)?"дня":"дней";})(left);
 $("#minPrice").textContent=rub(Math.min(...CONFIG.lengths.map(l=>l.price)));
