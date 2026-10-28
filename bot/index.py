@@ -398,6 +398,9 @@ ADMIN_HELP = ("Вы — администратор Lumio.\n\n"
               "• <b>/active</b> — с кем вы сейчас на связи.\n\n"
               "<b>Заявки (мини-CRM):</b>\n"
               "• Статус меняется кнопками под заявкой: 🆕 → 🎨 Эскиз → 💳 Оплачено → 🎬 В работе → ✅ Сдано / ❌ Отказ.\n"
+              "• <b>/zayavka</b> — ответом на сообщение клиента: завести заявку из переписки "
+              "(можно с деталями: /zayavka День матери, 1 минута). Клиенту не отправляется.\n"
+              "• Клиент прислал фото в чат — заявка заводится сама.\n"
               "• <b>/orders</b> — открытые заявки · <b>/order 3</b> — карточка заявки №3 с кнопками.\n"
               "• <b>/stats</b> — воронка за 30 дней · <b>/export</b> — все заявки таблицей для Excel.\n\n"
               f"• Если вы молчите {int(HUMAN_HOURS)} ч, клиент сам возвращается к боту.")
@@ -416,6 +419,13 @@ def handle_admin(msg):
         if text.lower() in ("/bot", "/бот"):
             set_mode(client, False)
             send(ADMIN, f"🤖 Клиент #c{client} снова общается с ботом.", reply_to_message_id=msg["message_id"])
+            return
+        if re.match(r"^/(zayavka|заявка)\b", text, re.IGNORECASE):
+            info = re.sub(r"^/(zayavka|заявка)\S*\s*", "", text, flags=re.IGNORECASE).strip()
+            num = order_from_chat(int(client), info, "добавил менеджер")
+            set_mode(client, True)
+            send(ADMIN, f"📝 Заявка #{num} заведена (клиенту ничего не отправлено).",
+                 reply_to_message_id=msg["message_id"])
             return
         if text.lower() in ("/human", "/я"):
             set_mode(client, True)
@@ -501,6 +511,11 @@ def handle_client(msg, context):
         except ValueError:
             order = {}
         deliver_order(order, [], {"id": chat_id, "username": user.get("username", "")})
+        return
+
+    # 0) фото в чат = хочет эскиз: заводим заявку (одну на клиента в сутки) и передаём фото
+    if ADMIN and (msg.get("photo") or (msg.get("document") or {}).get("mime_type", "").startswith("image/")):
+        photos_from_client(msg, user, text)
         return
 
     # 1) a live operator already handles this client -> just pass messages through
@@ -651,6 +666,48 @@ def deliver_order(order, photos, tg_user):
 
 
 # ---------------------------------------------------------------- mini-CRM (статусы заявок, воронка)
+_album_seen = {}  # media_group_id -> time: одно «спасибо» и одна шапка на альбом из нескольких фото
+
+
+def order_from_chat(uid, info, source):
+    """Заявка из переписки (а не из формы Mini App). Возвращает номер."""
+    ch = (tg("getChat", {"chat_id": uid}) or {}).get("result") or {}
+    name = " ".join(x for x in [ch.get("first_name"), ch.get("last_name")] if x) or "Клиент"
+    un = ch.get("username") or ""
+    o = {"name": name, "contact": ("@" + un) if un else "Telegram", "occasion": info or "—", "source": source}
+    sub = is_subscribed(uid)
+    num = crm.add_order(o, {"id": uid, "username": un}, sub)
+    res = send(ADMIN, f"<b>Заявка #{num}</b> ({source})\n<b>Имя:</b> {esc(name)}"
+                      + (f" (@{esc(un)})" if un else "") + f" #c{uid}"
+                      + (f"\n<b>Повод / детали:</b> {esc(info)}" if info else ""),
+               reply_markup=status_markup(num, "new"))
+    if res.get("ok"):
+        crm.set_admin_msg(num, res["result"]["message_id"])
+    return num
+
+
+def photos_from_client(msg, user, caption):
+    chat_id = msg["chat"]["id"]
+    album = msg.get("media_group_id")
+    first = True
+    if album:
+        now = time.time()
+        for k in [k for k, t in _album_seen.items() if now - t > 600]:
+            _album_seen.pop(k, None)
+        first = album not in _album_seen
+        _album_seen[album] = now
+    if first:
+        r = crm.recent_open_by_uid(chat_id)
+        if r:
+            send(ADMIN, f"📸 Ещё фото к заявке #{r['id']} — {who(user)} #c{chat_id}"
+                        + (f"\n\n{esc(caption)}" if caption else ""))
+        else:
+            order_from_chat(chat_id, caption, "фото в чат")
+        if not human_mode(chat_id):
+            send(chat_id, "Спасибо! Фото получили и передали художнику 🎨\n"
+                          "Напишем вам здесь в течение часа — уточним пару деталей и пришлём эскиз героя.")
+        set_mode(chat_id, True, " ".join(x for x in [user.get("first_name"), user.get("last_name")] if x))
+    tg("copyMessage", {"chat_id": ADMIN, "from_chat_id": chat_id, "message_id": msg["message_id"]})
 def status_markup(num, current):
     btn = lambda code, label: {"text": ("• " + label + " •") if code == current else label,  # noqa: E731
                                "callback_data": f"st:{num}:{code}"}

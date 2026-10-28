@@ -81,6 +81,13 @@ def get(num):
     return next((r for r in _load() if r["id"] == num), None)
 
 
+def recent_open_by_uid(uid, hours=24):
+    """Открытая заявка этого клиента, заведённая за последние N часов (чтобы не плодить дубли)."""
+    since = time.time() - hours * 3600
+    rows = [r for r in _load() if r.get("uid") == uid and r["status"] in OPEN and r["ts"] >= since]
+    return rows[-1] if rows else None
+
+
 def open_orders():
     return [r for r in _load() if r["status"] in OPEN]
 
