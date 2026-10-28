@@ -29,6 +29,10 @@ p{margin:0}
 .muted{color:var(--mist)} .small{font-size:13px}
 .eyebrow{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--lantern);font-weight:700}
 .screen{display:flex;flex-direction:column;gap:22px}
+#gate{position:fixed;inset:0;z-index:100;background:var(--sky);display:flex;align-items:center;justify-content:center;padding:20px 16px;overflow:auto}
+#gate[hidden]{display:none}
+.gate-card{max-width:420px;width:100%}
+#gateVid{width:100%;aspect-ratio:16/9;border-radius:14px;object-fit:cover;background:var(--sky-2)}
 .stack{display:flex;flex-direction:column;gap:10px}
 
 .brand{display:flex;align-items:center;gap:12px}
@@ -288,6 +292,20 @@ input::placeholder,textarea::placeholder{color:#6f6695}
 
 </main>
 
+<!-- обязательная подписка на канал -->
+<div id="gate" hidden>
+  <div class="gate-card stack" style="gap:14px">
+    <span class="eyebrow">Lumio ✨</span>
+    <h1 style="margin:0">Мультфильм по вашей истории</h1>
+    <video id="gateVid" muted playsinline loop autoplay preload="metadata" poster="media/po_mama.jpg" src="media/pv_mama.mp4"></video>
+    <p class="muted" style="margin:0">Приложение Lumio открыто для подписчиков нашего канала <b style="color:var(--star)">@lumioRF</b> — там наши мультфильмы, закулисье и праздничные предложения.</p>
+    <p class="small" style="margin:0;color:var(--lantern)">🎁 Подписчикам — эскиз героя бесплатно, до оплаты</p>
+    <button class="btn btn-gold" id="gateSub" type="button">📢 Подписаться на канал</button>
+    <button class="btn btn-ghost" id="gateCheck" type="button">✅ Я подписался</button>
+    <p class="small" id="gateMsg" style="margin:0;color:var(--rose);text-align:center" hidden>Пока не вижу подписки — подпишитесь и нажмите ещё раз</p>
+  </div>
+</div>
+
 <div class="player" id="player" role="dialog" aria-modal="true" aria-labelledby="ptitle" hidden>
   <button class="close" id="pclose" type="button" aria-label="Закрыть">✕</button>
   <video id="pvideo" controls playsinline preload="auto"></video>
@@ -311,7 +329,9 @@ input::placeholder,textarea::placeholder{color:#6f6695}
 const CONFIG = {
   contact: "creatormult",                       // куда писать вручную, пока бот не подключён
   siteUrl: "https://claude.ai/artifact/4JZQNyqDd1r75BAoTeov7M#works", // запасной вариант, если у ролика нет файла film
-  orderEndpoint: "https://193-32-178-96.sslip.io/order",                         // адрес сервера бота: сюда уходит заявка с фото (POST multipart)
+  orderEndpoint: "https://193-32-178-96.sslip.io/order",
+  checkEndpoint: "https://193-32-178-96.sslip.io/check",                         // проверка подписки на канал (обязательная)
+  channelUrl: "https://t.me/lumioRF",                         // адрес сервера бота: сюда уходит заявка с фото (POST multipart)
   nyDeadline: "2026-12-10",
   // ближайший праздник для плашки на главной: показывается первый, у которого дедлайн ещё не прошёл
   holidays: [
@@ -555,6 +575,7 @@ async function sendOrder(o){
     if (tg) fd.append("initData",tg.initData);
     pics.forEach((b,i)=>fd.append("photo"+i,b,"photo"+i+".jpg"));
     const r=await fetch(CONFIG.orderEndpoint,{method:"POST",body:fd});
+    if(r.status===403){ showGate(); return "gate"; }
     if(!r.ok) throw new Error("HTTP "+r.status);
     return "sent";
   }
@@ -576,6 +597,7 @@ $("#orderForm").addEventListener("submit",async e=>{
   let mode="manual";
   try{ mode=await sendOrder(o); }catch(_){ mode="manual"; }
   b.disabled=false;b.textContent="Отправить заявку";
+  if(mode==="gate") return;
   try{ tg && tg.HapticFeedback && tg.HapticFeedback.notificationOccurred("success"); }catch(_){}
   $("#orderForm").hidden=true;
   if(mode==="sent"){ $("#sent").hidden=false; }
@@ -584,6 +606,23 @@ $("#orderForm").addEventListener("submit",async e=>{
 });
 $("#editBtn").addEventListener("click",()=>{$("#orderForm").hidden=false;$("#manual").hidden=true;});
 $("#chatBtn").addEventListener("click",openChat);
+/* обязательная подписка на канал: проверяет сервер бота по подписанным данным Telegram.
+   Вне Telegram или если сервер не ответил — пускаем (не запираем людей из-за сбоя). */
+function showGate(){ $("#gate").hidden=false; try{$("#gateVid").play().catch(()=>{});}catch(_){} }
+async function checkSub(manual){
+  if(!(tg && tg.initData && CONFIG.checkEndpoint)) return;
+  try{
+    const r=await fetch(CONFIG.checkEndpoint,{method:"POST",headers:{"Content-Type":"text/plain"},body:JSON.stringify({initData:tg.initData})});
+    const j=await r.json();
+    if(j.subscribed===false){ showGate(); if(manual){ $("#gateMsg").hidden=false; try{tg.HapticFeedback.notificationOccurred("error");}catch(_){} } }
+    else { $("#gate").hidden=true; $("#gateMsg").hidden=true; }
+  }catch(_){}
+}
+$("#gateSub").addEventListener("click",()=>{ $("#gateMsg").hidden=true; if(tg&&tg.openTelegramLink) tg.openTelegramLink(CONFIG.channelUrl); else window.open(CONFIG.channelUrl,"_blank","noopener"); });
+$("#gateCheck").addEventListener("click",()=>checkSub(true));
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden && !$("#gate").hidden) checkSub(false); });
+try{ tg && tg.onEvent && tg.onEvent("activated",()=>{ if(!$("#gate").hidden) checkSub(false); }); }catch(_){}
+checkSub(false);
 /* бесплатный эскиз: ?src=sketch, #sketch или startapp=sketch -> сразу форма заявки с фото */
 if(startSource()==="sketch"||location.hash==="#sketch"){ $("#sketchNote").hidden=false; go("order"); }
 $("#copyBtn").addEventListener("click",()=>{

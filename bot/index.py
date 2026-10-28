@@ -113,17 +113,41 @@ def sketch_app_markup():
 
 
 # ---------------------------------------------------------------- channel subscription (bonus: priority)
+_sub_cache = {}  # user_id -> (time, True): подписчиков не перепроверяем 10 минут
+
+
 def is_subscribed(user_id):
     """True / False — подписан ли на канал; None — проверить нельзя (бот не админ канала, сеть)."""
     if not CHANNEL or not user_id:
         return None
+    hit = _sub_cache.get(user_id)
+    if hit and time.time() - hit[0] < 600:
+        return True
     r = tg("getChatMember", {"chat_id": CHANNEL, "user_id": user_id}, timeout=(5, 8))
     if not r.get("ok"):
         print("getChatMember:", r.get("description") or r.get("error"))
         return None
     m = r.get("result") or {}
     st = m.get("status")
-    return st in ("creator", "administrator", "member") or (st == "restricted" and bool(m.get("is_member")))
+    ok = st in ("creator", "administrator", "member") or (st == "restricted" and bool(m.get("is_member")))
+    if ok:
+        _sub_cache[user_id] = (time.time(), True)
+    else:
+        _sub_cache.pop(user_id, None)
+    return ok
+
+
+GATE_TEXT = ("Привет! Вы в <b>Lumio</b> ✨ — студии мультфильмов по вашим историям: рисуем вашу семью "
+             "мультяшными героями и снимаем про вас настоящий мультфильм.\n\n"
+             f"Бот и приложение Lumio открыты для подписчиков нашего канала {CHANNEL} — там наши мультфильмы, "
+             "закулисье и праздничные предложения. А ещё подписчикам — эскиз героя бесплатно 🎁\n\n"
+             "Подпишитесь и нажмите «Я подписался» 👇")
+
+
+def gate(chat_id, text):
+    """Обязательная подписка: показываем приглашение, после подписки ведём туда, куда человек шёл."""
+    dest = "sketch" if (text.startswith("/sketch") or text.startswith("/start sketch")) else "start"
+    send(chat_id, GATE_TEXT, reply_markup=subscribe_markup("gate_" + dest))
 
 
 def subscribe_markup(data="sub_check"):
@@ -156,6 +180,23 @@ def handle_callback(cq):
     if cq.get("data") == "sketch":
         tg("answerCallbackQuery", {"callback_query_id": cq["id"]})
         sketch_offer(uid, user)
+        return
+    if (cq.get("data") or "").startswith("gate_"):
+        sub = is_subscribed(uid)
+        if sub is False:
+            tg("answerCallbackQuery", {"callback_query_id": cq["id"], "show_alert": True,
+                                       "text": "Пока не вижу подписки. Подпишитесь на канал и нажмите кнопку ещё раз 🤍"})
+            return
+        tg("answerCallbackQuery", {"callback_query_id": cq["id"], "text": "Добро пожаловать в Lumio ✨"})
+        if msg:
+            tg("editMessageReplyMarkup", {"chat_id": msg["chat"]["id"], "message_id": msg["message_id"],
+                                          "reply_markup": {"inline_keyboard": []}})
+        if cq["data"] == "gate_sketch":
+            sketch_offer(uid, user)
+        else:
+            send(uid, GREETING, reply_markup=greeting_markup())
+        if ADMIN:
+            send(ADMIN, f"📢 Подписался на канал и открыл бота — {who(user)} #c{uid}")
         return
     if cq.get("data") not in ("sub_check", "sketch_check"):
         tg("answerCallbackQuery", {"callback_query_id": cq["id"]})
@@ -407,6 +448,13 @@ def handle_client(msg, context):
     if text.startswith("/myid"):
         send(chat_id, f"Ваш chat id: <code>{chat_id}</code>")
         return
+    # обязательная подписка (кроме клиентов, с которыми уже общается менеджер)
+    if not (ADMIN and human_mode(chat_id)) and is_subscribed(user.get("id")) is False:
+        if text.startswith("/start") and ADMIN:
+            send(ADMIN, f"👋 Новый человек в боте (ещё не подписан на канал): {who(user)} {tag}")
+        gate(chat_id, text)
+        return
+
     if text.startswith("/sketch") or text.startswith("/start sketch"):
         if text.startswith("/start"):
             send(chat_id, "Привет! Вы в <b>Lumio</b> ✨ — студии мультфильмов по вашим историям: "
@@ -614,6 +662,15 @@ def handler(event, context):
             print("update error", repr(e))
         return respond(200, {"ok": True})
 
+    if src == "check" and method == "POST":  # Mini App: подписан ли пользователь на канал
+        try:
+            init = json.loads(body or b"{}").get("initData", "")
+        except ValueError:
+            init = ""
+        u = check_init_data(init)
+        sub = is_subscribed(u.get("id")) if u and u.get("id") else None
+        return respond(200, {"ok": True, "subscribed": sub, "channel": CHANNEL_URL})
+
     if src == "order" and method == "POST":
         ctype = headers.get("content-type", "")
         try:
@@ -628,6 +685,8 @@ def handler(event, context):
         if not (order.get("name") and order.get("contact")):
             return respond(400, {"ok": False, "error": "name and contact required"})
         tg_user = check_init_data(fields.get("initData", ""))
+        if tg_user and tg_user.get("id") and is_subscribed(tg_user["id"]) is False:
+            return respond(403, {"ok": False, "error": "not_subscribed", "channel": CHANNEL_URL})
         photos = [f for f in files if f[2].startswith("image/")]
         ok = deliver_order(order, photos, tg_user)
         return respond(200 if ok else 502, {"ok": ok})
