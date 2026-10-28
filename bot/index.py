@@ -31,6 +31,8 @@ from email.policy import default as email_policy
 
 import requests
 
+import crm
+
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 SECRET = os.environ.get("WEBHOOK_SECRET", "")
 PUBLIC_URL = os.environ.get("PUBLIC_URL", "").rstrip("/")
@@ -177,6 +179,12 @@ def handle_callback(cq):
     user = cq.get("from") or {}
     uid = user.get("id")
     msg = cq.get("message") or {}
+    if (cq.get("data") or "").startswith("st:"):
+        if ADMIN and str(uid) == ADMIN:
+            handle_status(cq)
+        else:
+            tg("answerCallbackQuery", {"callback_query_id": cq["id"]})
+        return
     if cq.get("data") == "sketch":
         tg("answerCallbackQuery", {"callback_query_id": cq["id"]})
         sketch_offer(uid, user)
@@ -195,6 +203,7 @@ def handle_callback(cq):
             sketch_offer(uid, user)
         else:
             send(uid, GREETING, reply_markup=greeting_markup())
+        crm.log_event("sub", uid)
         if ADMIN:
             send(ADMIN, f"📢 Подписался на канал и открыл бота — {who(user)} #c{uid}")
         return
@@ -307,7 +316,14 @@ def setup_profile():
     """Описание, короткое описание и меню команд бота. Вызывается при каждом запуске."""
     return {"commands": tg("setMyCommands", {"commands": COMMANDS}),
             "description": tg("setMyDescription", {"description": DESCRIPTION}),
-            "short": tg("setMyShortDescription", {"short_description": SHORT_DESCRIPTION})}
+            "short": tg("setMyShortDescription", {"short_description": SHORT_DESCRIPTION}),
+            # отдельное меню команд — только в вашем чате с ботом
+            "admin_menu": tg("setMyCommands", {"scope": {"type": "chat", "chat_id": int(ADMIN)}, "commands": [
+                {"command": "orders", "description": "Открытые заявки"},
+                {"command": "stats", "description": "Воронка за 30 дней"},
+                {"command": "export", "description": "Все заявки таблицей"},
+                {"command": "active", "description": "С кем я сейчас на связи"},
+                {"command": "help", "description": "Подсказка"}]}) if ADMIN.lstrip("-").isdigit() else {}}
 
 
 def greeting_markup():
@@ -379,7 +395,11 @@ ADMIN_HELP = ("Вы — администратор Lumio.\n\n"
               "После вашего ответа бот перестаёт отвечать этому клиенту сам: дальше общаетесь вы.\n"
               "• <b>/bot</b> — ответом на сообщение клиента: вернуть его боту.\n"
               "• <b>/human</b> — ответом на сообщение клиента: забрать на себя без ответа.\n"
-              "• <b>/active</b> — с кем вы сейчас на связи.\n"
+              "• <b>/active</b> — с кем вы сейчас на связи.\n\n"
+              "<b>Заявки (мини-CRM):</b>\n"
+              "• Статус меняется кнопками под заявкой: 🆕 → 🎨 Эскиз → 💳 Оплачено → 🎬 В работе → ✅ Сдано / ❌ Отказ.\n"
+              "• <b>/orders</b> — открытые заявки · <b>/order 3</b> — карточка заявки №3 с кнопками.\n"
+              "• <b>/stats</b> — воронка за 30 дней · <b>/export</b> — все заявки таблицей для Excel.\n\n"
               f"• Если вы молчите {int(HUMAN_HOURS)} ч, клиент сам возвращается к боту.")
 
 
@@ -423,6 +443,8 @@ def handle_admin(msg):
                 f"• {esc(r.get('name') or 'клиент')} #c{cid}" for cid, r in rows) +
                 "\n\nВернуть клиента боту: ответьте /bot на его сообщение.")
         return
+    if text.startswith("/") and admin_crm(text):
+        return
     if text.startswith("/"):
         send(ADMIN, ADMIN_HELP + f"\n\nВаш chat id: <code>{msg['chat']['id']}</code>")
 
@@ -448,10 +470,13 @@ def handle_client(msg, context):
     if text.startswith("/myid"):
         send(chat_id, f"Ваш chat id: <code>{chat_id}</code>")
         return
+    if text.startswith("/start"):
+        crm.log_event("start", user.get("id"))
     # обязательная подписка (кроме клиентов, с которыми уже общается менеджер)
     if not (ADMIN and human_mode(chat_id)) and is_subscribed(user.get("id")) is False:
         if text.startswith("/start") and ADMIN:
             send(ADMIN, f"👋 Новый человек в боте (ещё не подписан на канал): {who(user)} {tag}")
+        crm.log_event("gate", user.get("id"))
         gate(chat_id, text)
         return
 
@@ -593,7 +618,10 @@ def deliver_order(order, photos, tg_user):
         print("ADMIN_CHAT_ID is not set; order lost:", order)
         return False
     sub = is_subscribed(tg_user.get("id")) if tg_user and tg_user.get("id") else None
-    res = send(ADMIN, order_text(order, tg_user, sub))
+    num = crm.add_order(order, tg_user, sub)
+    res = send(ADMIN, f"<b>Заявка #{num}</b>\n" + order_text(order, tg_user, sub), reply_markup=status_markup(num, "new"))
+    if res.get("ok"):
+        crm.set_admin_msg(num, res["result"]["message_id"])
     photos = photos[:10]
     if len(photos) == 1:
         n, d, t = photos[0]
@@ -620,6 +648,83 @@ def deliver_order(order, photos, tg_user):
         else:
             send(tg_user["id"], thanks)
     return bool(res.get("ok"))
+
+
+# ---------------------------------------------------------------- mini-CRM (статусы заявок, воронка)
+def status_markup(num, current):
+    btn = lambda code, label: {"text": ("• " + label + " •") if code == current else label,  # noqa: E731
+                               "callback_data": f"st:{num}:{code}"}
+    s = crm.STATUSES
+    return {"inline_keyboard": [[btn(*s[0]), btn(*s[1]), btn(*s[2])], [btn(*s[3]), btn(*s[4]), btn(*s[5])]]}
+
+
+def handle_status(cq):
+    try:
+        _, num, code = cq["data"].split(":")
+        num = int(num)
+    except ValueError:
+        return tg("answerCallbackQuery", {"callback_query_id": cq["id"]})
+    r = crm.set_status(num, code)
+    if not r:
+        return tg("answerCallbackQuery", {"callback_query_id": cq["id"], "text": "Заявка не найдена"})
+    msg = cq.get("message") or {}
+    if msg:
+        tg("editMessageReplyMarkup", {"chat_id": msg["chat"]["id"], "message_id": msg["message_id"],
+                                      "reply_markup": status_markup(num, code)})
+    tg("answerCallbackQuery", {"callback_query_id": cq["id"], "text": f"#{num}: {crm.LABEL[code]}"})
+
+
+def days_ago(ts):
+    d = int((time.time() - ts) // 86400)
+    return "сегодня" if d == 0 else f"{d} дн."
+
+
+def admin_crm(text):
+    """/orders, /order N, /stats, /export. True — команда обработана."""
+    low = text.lower()
+    if low.startswith("/orders"):
+        rows = crm.open_orders()
+        if not rows:
+            send(ADMIN, "Открытых заявок нет 🙌")
+        else:
+            lines = [f"#{r['id']} · {esc(r['name'])} · {esc(r['occasion'])} · {crm.LABEL[r['status']]} · {days_ago(r['ts'])}"
+                     for r in sorted(rows, key=lambda r: r["ts"])]
+            send(ADMIN, "📋 <b>Открытые заявки</b>\n\n" + "\n".join(lines) +
+                 "\n\nКарточка с кнопками: /order номер (например, /order 3)")
+        return True
+    if low.startswith("/order"):
+        try:
+            num = int(text.split()[1].lstrip("#"))
+        except (IndexError, ValueError):
+            send(ADMIN, "Напишите номер: /order 3")
+            return True
+        r = crm.get(num)
+        if not r:
+            send(ADMIN, f"Заявки #{num} нет.")
+            return True
+        hist = "\n".join(f"  {time.strftime('%d.%m %H:%M', time.localtime(t))} — {crm.LABEL.get(s, s)}" for t, s in r["history"])
+        tag = f"#c{r['uid']}" if r.get("uid") else ""
+        send(ADMIN, f"<b>Заявка #{num}</b> — {esc(r['name'])} {tag}\n<b>Контакт:</b> {esc(r['contact'])}\n"
+                    f"<b>Повод:</b> {esc(r['occasion'])}\n<b>Параметры:</b> {esc(r['params'])}\n"
+                    f"<b>История:</b> {esc(r['story'][:600]) or '—'}\n\n<b>Статусы:</b>\n{hist}",
+             reply_markup=status_markup(num, r["status"]))
+        return True
+    if low.startswith("/stats"):
+        s = crm.stats(30)
+        pct = lambda a, b: f" ({round(100 * a / b)}%)" if b else ""  # noqa: E731
+        send(ADMIN, "📊 <b>Воронка за 30 дней</b>\n\n"
+                    f"👋 Пришли в бота: {s['start']}\n"
+                    f"📢 Показали подписку: {s['gate']} → подписались: {s['sub']}{pct(s['sub'], s['gate'])}\n"
+                    f"📝 Заявки: {s['orders']}\n"
+                    f"🎨 Эскиз отправлен: {s['sketch']}{pct(s['sketch'], s['orders'])}\n"
+                    f"💳 Оплатили: {s['paid']}{pct(s['paid'], s['orders'])}\n"
+                    f"✅ Сдано: {s['done']}\n❌ Отказ: {s['lost']}\n⏳ В работе сейчас: {s['open']}")
+        return True
+    if low.startswith("/export"):
+        tg("sendDocument", {"chat_id": ADMIN, "caption": "Все заявки Lumio (открывается в Excel)"},
+           files={"document": (f"lumio_zayavki_{time.strftime('%Y-%m-%d')}.csv", crm.export_csv(), "text/csv")})
+        return True
+    return False
 
 
 # ---------------------------------------------------------------- entry point
