@@ -131,7 +131,8 @@ def _seedream(prompt, refs, size):
             break
         except requests.exceptions.ConnectionError as e:
             print("seedream send error", attempt, repr(e)[:200], flush=True)
-            if attempt == 2:
+            sent_fail = isinstance(e, requests.exceptions.ConnectTimeout) or "write operation timed out" in str(e)
+            if attempt == 2 or not sent_fail:   # повторяем только если запрос точно не ушёл
                 raise
             time.sleep(5)
     try:
