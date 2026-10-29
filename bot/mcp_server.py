@@ -114,7 +114,11 @@ def _shrink(data, ctype, side=1536):
 
 def _seedream(prompt, refs, size):
     images = []
+    inline = os.environ.get("SEEDREAM_INLINE_REFS") == "1"   # по умолчанию BytePlus сам скачивает референсы по ссылкам
     for u in refs:
+        if not inline:
+            images.append(u)
+            continue
         data, ctype = _fetch(u)
         data, mime = _shrink(data, ctype)
         images.append("data:%s;base64,%s" % (mime, base64.b64encode(data).decode()))
