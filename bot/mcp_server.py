@@ -94,17 +94,35 @@ def _fetch(url, limit=40 * 1024 * 1024):
 
 
 # ---------- Seedream ----------
+def _shrink(data, ctype, side=2048):
+    """Референс до 2048 px по длинной стороне, JPEG q90 — чтобы запрос в BytePlus был лёгким."""
+    try:
+        import cv2
+        import numpy as np
+        img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+        h, w = img.shape[:2]
+        k = side / max(h, w)
+        if k < 1:
+            img = cv2.resize(img, (int(w * k), int(h * k)), interpolation=cv2.INTER_AREA)
+        ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 90])
+        if ok:
+            return buf.tobytes(), "image/jpeg"
+    except Exception as e:
+        print("shrink error", repr(e), flush=True)
+    return data, (ctype if ctype.startswith("image/") else "image/jpeg")
+
+
 def _seedream(prompt, refs, size):
     images = []
     for u in refs:
         data, ctype = _fetch(u)
-        mime = ctype if ctype.startswith("image/") else "image/jpeg"
+        data, mime = _shrink(data, ctype)
         images.append("data:%s;base64,%s" % (mime, base64.b64encode(data).decode()))
     body = {"model": seedream.MODEL, "prompt": prompt, "size": size, "response_format": "b64_json",
             "output_format": "jpeg", "watermark": False}
     if images:
         body["image"] = images if len(images) > 1 else images[0]
-    r = requests.post(seedream.BASE + "/images/generations", json=body, timeout=(10, 300),
+    r = requests.post(seedream.BASE + "/images/generations", json=body, timeout=(120, 300),
                       headers={"Authorization": "Bearer " + seedream.KEY, "Content-Type": "application/json"})
     try:
         j = r.json()
