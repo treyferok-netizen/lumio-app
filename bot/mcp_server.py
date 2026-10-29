@@ -104,7 +104,7 @@ def _shrink(data, ctype, side=1536):
         k = side / max(h, w)
         if k < 1:
             img = cv2.resize(img, (int(w * k), int(h * k)), interpolation=cv2.INTER_AREA)
-        ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 88])
+        ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 85])
         if ok:
             return buf.tobytes(), "image/jpeg"
     except Exception as e:
@@ -114,13 +114,14 @@ def _shrink(data, ctype, side=1536):
 
 def _seedream(prompt, refs, size):
     images = []
-    inline = os.environ.get("SEEDREAM_INLINE_REFS") == "1"   # по умолчанию BytePlus сам скачивает референсы по ссылкам
     for u in refs:
-        if not inline:
+        own = file_path(u.rsplit("/files/", 1)[-1]) if "/files/" in u else None
+        if not own:                      # внешние ссылки (GitHub и т.п.) BytePlus скачивает сам
             images.append(u)
             continue
-        data, ctype = _fetch(u)
-        data, mime = _shrink(data, ctype)
+        with open(own, "rb") as f:       # наши файлы BytePlus качает медленно — отправляем сжатыми внутри запроса
+            data = f.read()
+        data, mime = _shrink(data, "image/jpeg", side=1280)
         images.append("data:%s;base64,%s" % (mime, base64.b64encode(data).decode()))
     body = {"model": seedream.MODEL, "prompt": prompt, "size": size, "response_format": "b64_json",
             "output_format": "jpeg", "watermark": False}
