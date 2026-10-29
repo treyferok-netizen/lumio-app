@@ -94,7 +94,7 @@ def _fetch(url, limit=40 * 1024 * 1024):
 
 
 # ---------- Seedream ----------
-def _shrink(data, ctype, side=2048):
+def _shrink(data, ctype, side=1536):
     """Референс до 2048 px по длинной стороне, JPEG q90 — чтобы запрос в BytePlus был лёгким."""
     try:
         import cv2
@@ -104,7 +104,7 @@ def _shrink(data, ctype, side=2048):
         k = side / max(h, w)
         if k < 1:
             img = cv2.resize(img, (int(w * k), int(h * k)), interpolation=cv2.INTER_AREA)
-        ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 90])
+        ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 88])
         if ok:
             return buf.tobytes(), "image/jpeg"
     except Exception as e:
@@ -122,8 +122,18 @@ def _seedream(prompt, refs, size):
             "output_format": "jpeg", "watermark": False}
     if images:
         body["image"] = images if len(images) > 1 else images[0]
-    r = requests.post(seedream.BASE + "/images/generations", json=body, timeout=(120, 300),
-                      headers={"Authorization": "Bearer " + seedream.KEY, "Content-Type": "application/json"})
+    payload = json.dumps(body).encode()
+    print("seedream request", len(payload) // 1024, "KB,", len(images), "refs", flush=True)
+    for attempt in range(3):            # обрыв при отправке = запрос не дошёл, повтор безопасен
+        try:
+            r = requests.post(seedream.BASE + "/images/generations", data=payload, timeout=(60, 300),
+                              headers={"Authorization": "Bearer " + seedream.KEY, "Content-Type": "application/json"})
+            break
+        except requests.exceptions.ConnectionError as e:
+            print("seedream send error", attempt, repr(e)[:200], flush=True)
+            if attempt == 2:
+                raise
+            time.sleep(5)
     try:
         j = r.json()
     except ValueError:
