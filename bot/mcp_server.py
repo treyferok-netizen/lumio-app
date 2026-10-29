@@ -247,6 +247,25 @@ def kling_upload(args):
     return (_text if r.ok else _err)(f"Kling HTTP {r.status_code}: {r.text[:1500]}")
 
 
+def server_update():
+    import subprocess
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _busy.locked():
+        return _err("Сейчас идёт генерация — обновлю после неё.")
+    out = []
+    for cmd in (["git", "-C", repo, "checkout", "--", "."],
+                ["git", "-C", repo, "pull", "--ff-only", "-q"],
+                [os.path.join(repo, ".venv", "bin", "pip"), "install", "-q", "-r", os.path.join(repo, "bot", "requirements.txt")],
+                ["git", "-C", repo, "log", "--oneline", "-1"]):
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        out.append(f"$ {' '.join(cmd[-3:])}\n{(p.stdout + p.stderr).strip()[-600:]}")
+        if p.returncode != 0:
+            return _err("Обновление остановилось:\n" + "\n".join(out))
+    # перезапуск через секунду, чтобы успеть ответить
+    subprocess.Popen(["sh", "-c", "sleep 2; systemctl restart lumio-bot"], start_new_session=True)
+    return _text("Обновлено, сервис перезапускается (~5 с).\n" + "\n".join(out))
+
+
 # ---------- ответы MCP ----------
 def _text(s):
     return {"content": [{"type": "text", "text": s}]}
@@ -297,6 +316,10 @@ TOOLS = [
          "ticket": {"type": "string"},
          "filename": {"type": "string"}},
          "required": ["file_url", "upload_url", "ticket"]}},
+    {"name": "server_update",
+     "description": "Обновить бота и коннектор на сервере до последней версии из GitHub (git pull + pip + перезапуск). "
+                    "Только фиксированный репозиторий, без произвольных команд. Бесплатно.",
+     "inputSchema": {"type": "object", "properties": {}}},
     {"name": "seedream_status",
      "description": "Подключён ли ключ, модель, сколько картинок осталось на сегодня по лимиту.",
      "inputSchema": {"type": "object", "properties": {}}},
@@ -315,6 +338,8 @@ def _call(name, args, host):
         return _image_result(_save(data, "png" if ctype == "image/png" else "jpg"), host, "Сохранено.")
     if name == "kling_upload":
         return kling_upload(args)
+    if name == "server_update":
+        return server_update()
     if name == "seedream_status":
         return _text(json.dumps({"key": bool(seedream.KEY), "model": seedream.MODEL, "base": seedream.BASE,
                                  "left_today": seedream.left_today(), "daily_limit": seedream.DAILY,
