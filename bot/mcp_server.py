@@ -217,6 +217,25 @@ def frame_tool(args, host):
     return _image_result(name, host, f"Кадр №{idx} ({idx / fps:.2f} с), {w}x{h}.")
 
 
+def kling_upload(args):
+    up = args.get("upload_url", "")
+    if not up.startswith("https://") or "kling" not in up.split("/")[2]:
+        return _err("upload_url должен быть адресом Kling (https://…kling…).")
+    url = args.get("file_url", "")
+    p = file_path(url.rsplit("/files/", 1)[-1]) if "/files/" in url else None
+    if p:                                   # наш файл — читаем с диска
+        with open(p, "rb") as f:
+            data = f.read()
+        ctype = "image/png" if p.endswith(".png") else "image/jpeg"
+    else:
+        data, ctype = _fetch(url, limit=200 * 1024 * 1024)
+    if ctype not in ("image/png", "image/jpeg", "video/mp4", "audio/mpeg", "audio/wav"):
+        ctype = "image/jpeg"
+    name = args.get("filename") or os.path.basename(url.split("?")[0]) or "file.jpg"
+    r = requests.post(up, data={"ticket": args["ticket"]}, files={"file": (name, data, ctype)}, timeout=(30, 300))
+    return (_text if r.ok else _err)(f"Kling HTTP {r.status_code}: {r.text[:1500]}")
+
+
 # ---------- ответы MCP ----------
 def _text(s):
     return {"content": [{"type": "text", "text": s}]}
@@ -258,6 +277,15 @@ TOOLS = [
     {"name": "save_image",
      "description": "Скопировать картинку по ссылке на сервер Lumio и получить постоянную публичную ссылку (для Kling/Seedream). Бесплатно.",
      "inputSchema": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}},
+    {"name": "kling_upload",
+     "description": "Загрузить картинку/видео по ссылке в Kling по одноразовому билету (из klingai file_upload): "
+                    "сервер сам скачивает файл и отправляет его в Kling. Возвращает ответ Kling со ссылкой на файл. Бесплатно.",
+     "inputSchema": {"type": "object", "properties": {
+         "file_url": {"type": "string"},
+         "upload_url": {"type": "string", "description": "upload_url из klingai file_upload"},
+         "ticket": {"type": "string"},
+         "filename": {"type": "string"}},
+         "required": ["file_url", "upload_url", "ticket"]}},
     {"name": "seedream_status",
      "description": "Подключён ли ключ, модель, сколько картинок осталось на сегодня по лимиту.",
      "inputSchema": {"type": "object", "properties": {}}},
@@ -274,6 +302,8 @@ def _call(name, args, host):
     if name == "save_image":
         data, ctype = _fetch(args.get("url", ""))
         return _image_result(_save(data, "png" if ctype == "image/png" else "jpg"), host, "Сохранено.")
+    if name == "kling_upload":
+        return kling_upload(args)
     if name == "seedream_status":
         return _text(json.dumps({"key": bool(seedream.KEY), "model": seedream.MODEL, "base": seedream.BASE,
                                  "left_today": seedream.left_today(), "daily_limit": seedream.DAILY,
