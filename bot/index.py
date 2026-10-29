@@ -32,6 +32,7 @@ from email.policy import default as email_policy
 import requests
 
 import crm
+import seedream
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 SECRET = os.environ.get("WEBHOOK_SECRET", "")
@@ -319,6 +320,7 @@ def setup_profile():
             "short": tg("setMyShortDescription", {"short_description": SHORT_DESCRIPTION}),
             # отдельное меню команд — только в вашем чате с ботом
             "admin_menu": tg("setMyCommands", {"scope": {"type": "chat", "chat_id": int(ADMIN)}, "commands": [
+                {"command": "img", "description": "Seedream: шаги и генерация кадра"},
                 {"command": "orders", "description": "Открытые заявки"},
                 {"command": "stats", "description": "Воронка за 30 дней"},
                 {"command": "export", "description": "Все заявки таблицей"},
@@ -396,6 +398,7 @@ ADMIN_HELP = ("Вы — администратор Lumio.\n\n"
               "• <b>/bot</b> — ответом на сообщение клиента: вернуть его боту.\n"
               "• <b>/human</b> — ответом на сообщение клиента: забрать на себя без ответа.\n"
               "• <b>/active</b> — с кем вы сейчас на связи.\n\n"
+              "<b>Кадры Seedream:</b> пришлите референсы, затем /img номер шага (или /img свой промт). /img — список.\n\n"
               "<b>Заявки (мини-CRM):</b>\n"
               "• Статус меняется кнопками под заявкой: 🆕 → 🎨 Эскиз → 💳 Оплачено → 🎬 В работе → ✅ Сдано / ❌ Отказ.\n"
               "• <b>/zayavka</b> — ответом на сообщение клиента: завести заявку из переписки "
@@ -406,9 +409,69 @@ ADMIN_HELP = ("Вы — администратор Lumio.\n\n"
               f"• Если вы молчите {int(HUMAN_HOURS)} ч, клиент сам возвращается к боту.")
 
 
+def _download(file_id):
+    info = tg("getFile", {"file_id": file_id}).get("result") or {}
+    if not info.get("file_path"):
+        return None
+    try:
+        r = requests.get(f"https://api.telegram.org/file/bot{BOT_TOKEN}/{info['file_path']}", timeout=(10, 60))
+        return r.content if r.ok else None
+    except requests.RequestException:
+        return None
+
+
+def admin_img(text):
+    """/img, /img N, /img текст, /img_clear — генерация кадров Seedream на сервере."""
+    if text.lower().startswith("/img_clear"):
+        seedream.clear_refs()
+        send(ADMIN, "🧹 Референсы сброшены.")
+        return
+    arg = text.split(maxsplit=1)[1].strip() if len(text.split(maxsplit=1)) > 1 else ""
+    st = seedream.steps()
+    if not arg:
+        lines = [f"<b>{esc(k)}</b> — {esc(v['title'])}\n    {esc(v['refs'])}" for k, v in st.get("steps", {}).items()]
+        send(ADMIN, f"🎨 <b>Seedream — {esc(st.get('film', ''))}</b>\n\n" + "\n".join(lines) +
+             f"\n\nРеференсов сейчас: {seedream.refs_count()} · осталось на сегодня: {seedream.left_today()}\n"
+             "1) Пришлите референсы по порядку (image 1, 2, 3) фото или файлом\n2) /img номер шага — или /img свой промт\n"
+             "/img_clear — сбросить референсы")
+        return
+    if not seedream.ready():
+        send(ADMIN, "Seedream не подключён: на сервере выполните\n<code>lumio-set SEEDREAM_API_KEY ваш_ключ</code>")
+        return
+    step = st.get("steps", {}).get(arg)
+    prompt = step["prompt"] if step else arg
+    label = f"шаг {arg}: {step['title']}" if step else "свой промт"
+    m = re.search(r"\b(f\d+)\b", step["title"]) if step else None
+    fname = m.group(1) if m else "img"
+    n_refs = seedream.refs_count()
+    send(ADMIN, f"⏳ Генерирую {seedream.VARIANTS} варианта — {esc(label)}\nРеференсов: {n_refs}"
+                + (f" (нужно: {esc(step['refs'])})" if step else "") + "\nОбычно 20–60 секунд.")
+
+    def done(images):
+        for i, data in enumerate(images, 1):
+            tg("sendDocument", {"chat_id": ADMIN, "caption": f"Вариант {i} — {label}"},
+               files={"document": (f"{fname}_v{i}.jpg", data, "image/jpeg")})
+        send(ADMIN, f"✅ Готово. Осталось на сегодня: {seedream.left_today()}. Референсы сохранены — можно сразу /img ещё раз.")
+
+    seedream.generate(prompt, done, lambda e: send(ADMIN, "⚠️ " + esc(e)))
+
+
 def handle_admin(msg):
     text = (msg.get("text") or "").strip()
     rep = msg.get("reply_to_message")
+    # картинка без ответа на клиента = референс для /img
+    if not rep and (msg.get("photo") or (msg.get("document") or {}).get("mime_type", "").startswith("image/")):
+        fid = msg["photo"][-1]["file_id"] if msg.get("photo") else msg["document"]["file_id"]
+        data = _download(fid)
+        if not data:
+            send(ADMIN, "Не смог скачать картинку, пришлите ещё раз.")
+            return
+        n = seedream.add_ref(data, (msg.get("document") or {}).get("mime_type") or "image/jpeg")
+        send(ADMIN, f"📎 Референс сохранён как image {n}. Дальше: /img номер шага или /img свой промт. Список шагов: /img")
+        return
+    if text.lower().startswith("/img"):
+        admin_img(text)
+        return
     if rep:
         src = (rep.get("text") or "") + " " + (rep.get("caption") or "")
         m = TAG_RE.search(src)

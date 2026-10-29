@@ -1,0 +1,45 @@
+{
+ "film": "Письмо с огоньком",
+ "steps": {
+  "1": {
+   "title": "Кадр f1 — гостиная, вечер 31 декабря",
+   "refs": "image 1 = `varya_ref.jpg`",
+   "prompt": "Same girl as in image 1 — keep her face, light brown hair in two braids, big warm brown-hazel eyes, freckles, rosy cheeks, and the same dark blue pajamas with little yellow stars. Now she stands in a cozy Russian apartment living room on New Year's Eve evening, next to a real fir tree decorated with glass ornaments and a warm golden string of lights; outside the window snow is falling over a courtyard with lit windows of apartment buildings. She looks up at the garland with curiosity. In the soft-focus background, through an open kitchen doorway, her parents are cutting salad in warm light (a woman about 33 with chestnut hair in a low bun and a green knitted sweater, a man about 35 with short dark blond hair, a light short beard and a grey sweater). One bulb of the garland glows a little brighter than the others. Match the art style of image 1. Pixar-style 3D animation, stylized cartoon characters with big round expressive eyes and simplified smooth skin, realistic proportions (not chibi), warm cozy cinematic lighting, 16:9, no text, no letters, no numbers, no labels, no signs."
+  },
+  "3": {
+   "title": "Кадр f2 — заснеженный двор",
+   "refs": "image 1 = `s1_last.jpg` · image 2 = `varya_ref_winter.jpg`",
+   "prompt": "Same girl as in image 1 and image 2 — keep her face, light brown braids, big warm brown-hazel eyes, freckles and rosy cheeks. She is dressed exactly as in image 2: red knitted hat with a white pompom, white fluffy coat open over her dark blue starry pajamas, red mittens, grey felt boots (valenki). Now she is outside at night in a snowy Russian courtyard between apartment buildings with many warm lit windows, a small snow slide and a decorated fir tree in the middle of the yard, soft snowfall. She laughs, holding out her mitten to catch a snowflake; a tiny warm golden glowing light orb (no insects) floats next to her face. Match the art style of image 1. Pixar-style 3D animation, stylized cartoon characters with big round expressive eyes and simplified smooth skin, realistic proportions (not chibi), warm cozy cinematic lighting, 16:9, no text, no letters, no numbers, no labels, no signs."
+  },
+  "5": {
+   "title": "Кадр f3 — полёт над городом",
+   "refs": "image 1 = `s2_last.jpg` · image 2 = `varya_ref_winter.jpg`",
+   "prompt": "Same girl as in image 1 and image 2 — keep her face, light brown braids, big warm brown-hazel eyes, freckles, rosy cheeks, red hat with a white pompom, white fluffy coat open over starry pajamas, red mittens, grey felt boots. She is gently floating in the night sky above snowy rooftops of a Russian town, holding the tiny warm golden glowing light orb (no insects) in her mittens; below are warm lit windows, a snowy river with a bridge and lights, a dark forest on the horizon. Her face shows quiet delight, braids lifted by the air. Calm magical atmosphere, stars in the sky. Match the art style of image 1. Pixar-style 3D animation, stylized cartoon characters with big round expressive eyes and simplified smooth skin, realistic proportions (not chibi), warm cozy cinematic lighting, 16:9, no text, no letters, no numbers, no labels, no signs."
+  },
+  "7": {
+   "title": "Кадр f4 — зимний лес и терем",
+   "refs": "image 1 = `s3_last.jpg` · image 2 = `varya_ref_winter.jpg`",
+   "prompt": "Same girl as in image 1 and image 2 — keep her face, light brown braids, big warm brown-hazel eyes, freckles, rosy cheeks, red hat with a white pompom, white fluffy coat open over starry pajamas, red mittens, grey felt boots. She walks through a snowy winter forest at night between tall fir trees covered with snow; tiny warm lanterns hang on the branches. Deep in the forest stands a carved wooden Russian terem house with warm glowing windows and a carved door, smoke from the chimney. The tiny golden glowing light orb (no insects) floats ahead of her, lighting the path. Match the art style of image 1. Pixar-style 3D animation, stylized cartoon characters with big round expressive eyes and simplified smooth skin, realistic proportions (not chibi), warm cozy cinematic lighting, 16:9, no text, no letters, no numbers, no labels, no signs."
+  },
+  "9": {
+   "title": "Кадр f5 — мастерская Деда Мороза",
+   "refs": "image 1 = `s4_last.jpg` · image 2 = `varya_ref_winter.jpg`",
+   "prompt": "Same girl as in image 1 and image 2 — keep her face, light brown braids, big warm brown-hazel eyes, freckles, rosy cheeks, red hat with a white pompom, white fluffy coat open over starry pajamas, red mittens, grey felt boots. Inside a warm cozy wooden workshop of a Russian terem: a big wooden desk covered with a mountain of folded children's letters and envelopes with no writing visible, a warm stove, wooden toys on shelves, frosty windows. Russian Father Frost (Ded Moroz) — very long white beard, long red fur coat embroidered with silver snowflake patterns, tall red boyar hat with white fur, a silver staff leaning on the desk, kind blue eyes — turns to her from the desk with a kind surprised smile. The girl shyly holds out a small folded sheet of paper with both hands. The tiny golden light orb (no insects) floats above her shoulder. Not Santa Claus: no glasses, no Santa cap, no belt buckle. Match the art style of image 1. Pixar-style 3D animation, stylized cartoon characters with big round expressive eyes and simplified smooth skin, realistic proportions (not chibi), warm cozy cinematic lighting, 16:9, no text, no letters, no numbers, no labels, no signs."
+  },
+  "12": {
+   "title": "Кадр f7 — бабушка с дедушкой приехали",
+   "refs": "image 1 = `s6_last.jpg` · image 2 = `varya_ref.jpg` · image 3 = `s1_last.jpg`",
+   "prompt": "Same girl as in image 1 and image 2 — keep her face, light brown braids, big warm brown-hazel eyes, freckles, rosy cheeks; now she is back home in her dark blue pajamas with little yellow stars, exactly as in image 2. A cozy Russian apartment hallway with a coat rack and warm light. The front door is open: a cheerful woman about 60 with short silver-blond hair, only light smile lines, smooth cheeks, not frail, in a burgundy coat, and a cheerful man about 62 with grey hair and a neat grey moustache, not frail, in a dark winter coat and fur hat, step in with snow on their shoulders, carrying a bag of tangerines. The girl runs to hug them. Behind her are her mom (chestnut hair in a low bun, green knitted sweater) and dad (short dark blond hair, light short beard, grey sweater), the same people as in image 3, smiling. Match the art style of image 1. Pixar-style 3D animation, stylized cartoon characters with big round expressive eyes and simplified smooth skin, realistic proportions (not chibi), warm cozy cinematic lighting, 16:9, no text, no letters, no numbers, no labels, no signs."
+  },
+  "14": {
+   "title": "Кадр f8 — новогодний стол",
+   "refs": "image 1 = `s7_last.jpg`",
+   "prompt": "Same family as in image 1 — keep all their faces, hair and clothes (the little girl in dark blue starry pajamas, mom in a green knitted sweater, dad in a grey sweater, the woman about 60 and the man about 62 now without coats, in cozy sweaters). A festive New Year table in a Russian living room: a bowl of Olivier salad, tangerines, a cake, candles, sparkling glasses; the girl holds a glass of juice. On the TV in the background — only a big golden clock face with hands near midnight, no numbers, no text. Everyone raises their glasses and laughs. Behind them the decorated fir tree with a warm golden string of lights; one bulb glows brighter than the others. Match the art style of image 1. Pixar-style 3D animation, stylized cartoon characters with big round expressive eyes and simplified smooth skin, realistic proportions (not chibi), warm cozy cinematic lighting, 16:9, no text, no letters, no numbers, no labels, no signs."
+  },
+  "16": {
+   "title": "Кадр f9 — годы спустя",
+   "refs": "image 1 = `s8_last.jpg` · image 2 = `varya_face.jpg`",
+   "prompt": "The same cozy living room many years later, New Year's Eve, the same fir tree with the same warm golden string of lights. The same girl grown up — a woman about 30 with light brown hair in a long loose braid, big warm brown-hazel eyes and small freckles, keep her face from image 2 — in a cream sweater kneels by the tree hugging her 5-year-old daughter (light brown hair in two short pigtails, hazel eyes, red pajamas). The daughter reaches her hand toward one bulb of the garland that glows brighter than the others. Soft snowfall outside the window. Match the art style of image 1. Pixar-style 3D animation, stylized cartoon characters with big round expressive eyes and simplified smooth skin, realistic proportions (not chibi), warm cozy cinematic lighting, 16:9, no text, no letters, no numbers, no labels, no signs."
+  }
+ }
+}
