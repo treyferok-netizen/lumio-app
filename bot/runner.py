@@ -13,6 +13,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import index
+import mcp_server
 
 MAX_BODY = 12 * 1024 * 1024
 
@@ -74,7 +75,24 @@ class Web(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         self._send({"statusCode": 204, "headers": index.CORS, "body": ""})
 
+    def _raw(self, code, body=b"", ctype="application/json"):
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if body:
+            self.wfile.write(body)
+
     def do_POST(self):
+        path = self.path.partition("?")[0]
+        if path.startswith("/mcp/"):
+            if not mcp_server.path_ok(path):
+                return self._raw(404, b'{"error":"not found"}')
+            n = int(self.headers.get("Content-Length") or 0)
+            if n > MAX_BODY:
+                return self._raw(413)
+            code, body = mcp_server.handle(self.rfile.read(n) if n else b"", self.headers.get("Host", ""))
+            return self._raw(code, body or b"")
         ev = self._event("POST")
         if ev is None:
             return self._send(index.respond(413, {"ok": False, "error": "too large"}))
@@ -82,7 +100,22 @@ class Web(BaseHTTPRequestHandler):
             return self._send(index.respond(404, {"ok": False}))
         self._send(index.handler(ev, CTX))
 
+    def do_DELETE(self):
+        self._raw(405 if self.path.startswith("/mcp/") else 404)
+
     def do_GET(self):
+        path = self.path.partition("?")[0]
+        if path.startswith("/.well-known/"):
+            return self._raw(404, b'{"error":"not found"}')
+        if path.startswith("/mcp/"):
+            return self._raw(405 if mcp_server.path_ok(path) else 404)
+        if path.startswith("/files/"):
+            fp = mcp_server.file_path(path[len("/files/"):])
+            if not fp:
+                return self._raw(404, b'{"error":"not found"}')
+            with open(fp, "rb") as f:
+                data = f.read()
+            return self._raw(200, data, "image/png" if fp.endswith(".png") else "image/jpeg")
         ev = self._event("GET")
         src = (ev or {}).get("queryStringParameters", {}).get("src")
         if src == "diag":
@@ -96,5 +129,5 @@ class Web(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     threading.Thread(target=poll, daemon=True).start()
     srv = ThreadingHTTPServer(("127.0.0.1", 8080), Web)
-    print("orders on 127.0.0.1:8080", flush=True)
+    print("orders on 127.0.0.1:8080; mcp", "on" if mcp_server.enabled() else "off (MCP_SECRET)", flush=True)
     srv.serve_forever()
