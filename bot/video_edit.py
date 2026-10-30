@@ -115,7 +115,9 @@ def build(spec, resolve, out_path, log=print):
     if duck and main:   # музыка приглушается под голосом (sidechain)
         filters.append("".join(main) + f"amix=inputs={len(main)}:normalize=0:duration=longest,asplit=2[vo][sc]")
         filters.append("".join(duck) + f"amix=inputs={len(duck)}:normalize=0:duration=longest[mus]")
-        filters.append("[mus][sc]sidechaincompress=threshold=0.02:ratio=6:attack=40:release=600:makeup=1[musd]")
+        # sc дополняем тишиной: иначе компрессор обрывает музыку, когда кончается последняя реплика
+        filters.append("[sc]apad[scp]")
+        filters.append("[mus][scp]sidechaincompress=threshold=0.02:ratio=6:attack=40:release=600:makeup=1[musd]")
         filters.append(f"[vo][musd]amix=inputs=2:normalize=0:duration=longest,alimiter=limit=0.95,atrim=0:{total:.3f}[aout]")
     elif amix:
         filters.append("".join(amix) + f"amix=inputs={len(amix)}:normalize=0:duration=longest,"
