@@ -369,7 +369,9 @@ const CONFIG = {
     {id:"pets",  name:"Добавить питомцев",      add:900},
     {id:"rush",  name:"Срочно — за 3 дня",      pct:30}
   ],
+  showFirst: 3,   // сколько мультфильмов видно сразу; остальные — по кнопке «Показать ещё»
   works: [
+    {cat:"family", title:"Письмо с огоньком",           meta:"Новогодняя сказка", dur:"1:57", pv:"media/pv_ogonek.mp4", po:"media/po_ogonek.jpg", film:"media/film_ogonek.mp4"},
     {cat:"family", title:"Мама рядом",                  meta:"Ко Дню матери", dur:"1:34", pv:"media/pv_mama.mp4", po:"media/po_mama.jpg", film:"media/film_mama.mp4"},
     {cat:"family", title:"Соня и звёздный кит",         meta:"Семейная сказка", dur:"1:08", pv:"media/pv_sonya.mp4", po:"media/po_sonya.jpg", film:"media/film_sonya.mp4"},
     {cat:"author", title:"Космонавт из коробки",        meta:"Авторская история", dur:"2:08", pv:"media/pv_cosmo.mp4", po:"media/po_cosmo.jpg", film:"media/film_cosmo.mp4"},
@@ -422,20 +424,26 @@ $("#nyWord").textContent=(n=>{const a=n%10,b=n%100;return a===1&&b!==11?"ден�
 $("#minPrice").textContent=rub(Math.min(...CONFIG.lengths.map(l=>l.price)));
 
 /* gallery: real cartoons, short silent previews; full film opens on the site */
-let cat="all";
+let cat="all", showAll=false;
 const io = "IntersectionObserver" in window ? new IntersectionObserver(es=>es.forEach(en=>{
   const v=en.target; if(en.isIntersecting){const p=v.play(); if(p&&p.catch)p.catch(()=>{});} else v.pause();
 }),{threshold:.5}) : null;
 function renderGallery(){
   $("#cats").innerHTML=CONFIG.cats.map(c=>`<button class="chip" aria-pressed="${c.id===cat}" data-cat="${c.id}">${c.name}</button>`).join("");
-  const list=CONFIG.works.filter(w=>cat==="all"||w.cat===cat);
+  const all=CONFIG.works.filter(w=>cat==="all"||w.cat===cat);
+  const n=CONFIG.showFirst||3;
+  // если сверх лимита остаётся всего один ролик — показываем все, кнопка ради одного не нужна
+  const list=(showAll||all.length<=n+1)?all:all.slice(0,n);
+  const rest=all.length-list.length;
   $("#gallery").innerHTML=list.map(w=>`<div class="work">
     <div class="frame"><video src="${w.pv}" poster="${w.po}" muted loop playsinline preload="metadata" aria-label="${w.title} — фрагмент"></video><span class="dur">${w.dur}</span></div>
     <div class="work-row"><div><h3>${w.title}</h3><span class="small muted">${w.meta} · ${w.dur}</span></div>
-    <button class="watch" type="button" data-watch="${CONFIG.works.indexOf(w)}">Смотреть</button></div></div>`).join("");
+    <button class="watch" type="button" data-watch="${CONFIG.works.indexOf(w)}">Смотреть</button></div></div>`).join("")
+    + (rest>0 ? `<button class="btn btn-ghost more" type="button" id="moreWorks">Показать ещё ${rest} ${(n=>{const a=n%10,b=n%100;return a===1&&b!==11?"мультфильм":a>=2&&a<=4&&(b<12||b>14)?"мультфильма":"мультфильмов";})(rest)}</button>` : "");
   $("#gallery").querySelectorAll("video").forEach(v=>{ v.muted=true; if(io) io.observe(v); else { const p=v.play(); if(p&&p.catch)p.catch(()=>{}); } });
 }
-$("#cats").addEventListener("click",e=>{const b=e.target.closest("[data-cat]");if(!b)return;buzz();cat=b.dataset.cat;renderGallery();});
+$("#cats").addEventListener("click",e=>{const b=e.target.closest("[data-cat]");if(!b)return;buzz();cat=b.dataset.cat;showAll=false;renderGallery();});
+$("#gallery").addEventListener("click",e=>{if(!e.target.closest("#moreWorks"))return;buzz();showAll=true;renderGallery();});
 /* full film plays inside the Mini App */
 function openFilm(w){
   if(!w.film){ openExternal(CONFIG.siteUrl); return; }
