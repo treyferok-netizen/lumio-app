@@ -88,6 +88,11 @@ def build(spec, resolve, out_path, log=print):
     amix = []
     n_in = len(segs)
     for j, a in enumerate(auds):
+        # start/dur — взять кусок исходного трека (секунды внутри файла)
+        if a.get("start"):
+            args += ["-ss", f"{float(a['start']):.3f}"]
+        if a.get("dur"):
+            args += ["-t", f"{float(a['dur']):.3f}"]
         args += ["-i", resolve(a["src"])]
         k = n_in + j
         at = int(float(a.get("at") or 0) * 1000)
@@ -95,8 +100,11 @@ def build(spec, resolve, out_path, log=print):
         f = f"[{k}:a]aformat=sample_rates=48000:channel_layouts=stereo,volume={vol}"
         if a.get("fade_in"):
             f += f",afade=t=in:st=0:d={float(a['fade_in'])}"
+        if a.get("fade_out") and a.get("dur"):    # затухание в конце куска
+            fo = float(a["fade_out"])
+            f += f",afade=t=out:st={max(0.0, float(a['dur']) - fo):.3f}:d={fo}"
         f += f",adelay={at}|{at}"
-        if a.get("fade_out"):
+        if a.get("fade_out") and not a.get("dur"):
             fo = float(a["fade_out"])
             f += f",afade=t=out:st={max(0.0, total - fo):.3f}:d={fo}"
         f += f"[a{j}]"
