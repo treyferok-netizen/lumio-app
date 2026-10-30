@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Какой мультфильм подойдёт вашему ребёнку — Lumio</title>
+<meta name="description" content="Ответьте на 10 вопросов — и мы придумаем мультфильм, где главный герой ваш ребёнок.">
+<meta property="og:title" content="Какой мультфильм подойдёт вашему ребёнку?">
+<meta property="og:description" content="10 вопросов — и Lumio придумает мультфильм, где главный герой ваш ребёнок.">
+<meta property="og:image" content="media/po_ogonek.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Prata&family=Manrope:wght@400;500;600;700;800&display=swap">
+<style>
+:root{
+  --sky:#15122b; --sky-2:#1f1a3d; --sky-3:#2b2452; --line:#3a3266;
+  --star:#f3ecdf; --mist:#a99fc9; --lantern:#f2c46d; --lantern-ink:#2a1d05; --rose:#ef8fa3;
+  --f-display:"Prata", Georgia, "Times New Roman", serif;
+  --f-body:"Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0}
+body{min-height:100vh;background:var(--sky);background-image:radial-gradient(120% 60% at 80% -10%,#2d2560 0%,transparent 60%);background-attachment:fixed;
+  color:var(--star);font-family:var(--f-body);font-size:15px;line-height:1.5}
+#stars{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:0;opacity:.8}
+.app{position:relative;z-index:1;max-width:520px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;
+  padding:max(18px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(24px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+h1,h2{font-family:var(--f-display);font-weight:400;margin:0;text-wrap:balance}
+h1{font-size:31px;line-height:1.15} h2{font-size:24px;line-height:1.2}
+h1 em{font-style:normal;color:var(--lantern)}
+p{margin:0}
+.muted{color:var(--mist)} .small{font-size:13px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:.02em}
+.logo{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:radial-gradient(circle at 35% 30%,#3a3190,#14102e 70%);
+  border:1.5px solid var(--lantern);font-family:var(--f-display);font-size:19px;color:var(--lantern);box-shadow:0 0 16px -4px var(--lantern)}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:40px}
+.back{appearance:none;border:1px solid var(--line);background:var(--sky-3);color:var(--star);border-radius:999px;width:40px;height:40px;font:inherit;font-size:18px;cursor:pointer}
+.bar{height:6px;border-radius:99px;background:var(--sky-3);overflow:hidden;margin:14px 0 22px}
+.bar i{display:block;height:100%;width:0;background:var(--lantern);border-radius:99px;transition:width .35s ease}
+.step{display:flex;flex-direction:column;gap:16px;flex:1;animation:in .3s ease}
+@keyframes in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.count{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--lantern);font-weight:700}
+.opts{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.opts.one{grid-template-columns:1fr}
+.opt{appearance:none;text-align:left;cursor:pointer;font:inherit;color:var(--star);background:var(--sky-2);border:1.5px solid var(--line);
+  border-radius:16px;padding:14px 14px;display:flex;align-items:center;gap:10px;min-height:58px;transition:border-color .15s,background .15s,transform .1s}
+.opt:active{transform:scale(.98)}
+.opt .e{font-size:24px;line-height:1;flex:none}
+.opt b{font-weight:700;font-size:14.5px;line-height:1.25}
+.opt small{display:block;color:var(--mist);font-size:12px;font-weight:500;margin-top:2px}
+.opt[aria-pressed="true"]{border-color:var(--lantern);background:rgba(242,196,109,.12)}
+.opt[aria-pressed="true"]::after{content:"✓";margin-left:auto;color:var(--lantern);font-weight:800}
+input[type=text],textarea{width:100%;font:inherit;color:var(--star);background:var(--sky-2);border:1.5px solid var(--line);border-radius:12px;padding:12px 13px}
+textarea{min-height:84px;resize:vertical}
+input::placeholder,textarea::placeholder{color:#6f6695}
+input:focus,textarea:focus,.opt:focus-visible,.btn:focus-visible{outline:2px solid var(--lantern);outline-offset:2px}
+.label{font-size:13px;font-weight:700;color:var(--mist);display:block;margin-bottom:6px}
+.field{display:flex;flex-direction:column}
+.btn{appearance:none;border:0;cursor:pointer;font:inherit;font-weight:800;font-size:15px;border-radius:14px;padding:15px 18px;width:100%;
+  display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none}
+.btn-gold{background:var(--lantern);color:var(--lantern-ink);box-shadow:0 8px 24px -10px var(--lantern)}
+.btn-ghost{background:var(--sky-3);color:var(--star);border:1px solid var(--line)}
+.btn:disabled{opacity:.45;cursor:default;box-shadow:none}
+.foot{margin-top:auto;padding-top:18px;display:flex;flex-direction:column;gap:10px}
+.hint{font-size:12.5px;color:var(--mist);text-align:center}
+.cover{border-radius:18px;overflow:hidden;border:1px solid var(--line);aspect-ratio:16/9;background:#0c0a22}
+.cover img{width:100%;height:100%;object-fit:cover;display:block}
+.card{border:1px solid rgba(242,196,109,.4);background:linear-gradient(135deg,rgba(242,196,109,.12),rgba(242,196,109,.02));border-radius:18px;padding:16px}
+.card p+p{margin-top:8px}
+.sum{display:grid;gap:6px;font-size:13.5px}
+.sum div{display:flex;gap:8px}
+.sum span{color:var(--mist);min-width:118px;flex:none}
+.consent{display:flex;gap:10px;align-items:flex-start;font-size:13px;color:var(--mist)}
+.consent input{margin-top:3px;accent-color:var(--lantern)}
+.drop{border:1.5px dashed var(--line);border-radius:14px;padding:14px;text-align:center;cursor:pointer;background:var(--sky-2);display:flex;flex-direction:column;gap:2px}
+.thumbs{display:flex;gap:6px;flex-wrap:wrap}
+.thumbs img{width:56px;height:56px;object-fit:cover;border-radius:10px;border:1px solid var(--line)}
+.err{color:var(--rose);font-size:13px}
+.done{font-family:var(--f-display);font-size:28px;color:var(--lantern)}
+</style>
+</head>
+<body>
+<canvas id="stars" aria-hidden="true"></canvas>
+<main class="app">
+  <div class="top">
+    <button class="back" id="back" type="button" aria-label="Назад" hidden>←</button>
+    <div class="brand"><span class="logo">L</span><span>Lumio</span></div>
+    <span style="width:40px"></span>
+  </div>
+  <div class="bar" id="barWrap" hidden><i id="bar"></i></div>
+  <div id="view" style="display:flex;flex-direction:column;flex:1"></div>
+</main>
+
+<script>
+/* ============ НАСТРОЙКИ ============ */
+const ENDPOINT = "https://193-32-178-96.sslip.io/order";   // заявка уходит боту Lumio, бот присылает её вам
+const MANAGER = "https://t.me/creatormult";                  // запасной путь, если сервер недоступен
+const SOURCE = (new URLSearchParams(location.search).get("src") || "quiz").slice(0,40);
+
+/* Вопросы. type: one — один ответ (сразу дальше), many — несколько, text — свободный ответ. other:true — поле «свой вариант». */
+const Q = [
+  {id:"who", type:"one", q:"Для кого мультфильм?", other:true, opts:[
+    ["👦","Для сына"],["👧","Для дочки"],["🧒","Для внука или внучки"],["👩","Для мамы"],["👨","Для папы"],["👨‍👩‍👧","Про всю семью"]]},
+  {id:"age", type:"one", q:"Сколько лет главному герою?", opts:[
+    ["🍼","1–3 года"],["🧸","4–6 лет"],["🎒","7–10 лет"],["🎧","11–17 лет"],["🧑","Взрослый"]]},
+  {id:"occasion", type:"one", q:"Какой повод?", other:true, opts:[
+    ["🎂","День рождения"],["🎄","Новый год"],["💐","День матери"],["🎁","Просто подарок"],["📱","Поделиться с друзьями"],["🎓","Выпускной"]]},
+  {id:"loves", type:"many", q:"Что герой любит больше всего?", sub:"Можно выбрать несколько", other:true, opts:[
+    ["🏎️","Машинки и гонки"],["🦖","Динозавры"],["🚀","Космос"],["👑","Принцессы и феи"],["🐶","Животные"],["🦸","Супергерои"],
+    ["🏴‍☠️","Море и пираты"],["⚽","Спорт"],["🎨","Рисовать и петь"],["📚","Книги и сказки"],["🚲","Велосипед и самокат"],["🧱","Конструктор"]]},
+  {id:"world", type:"one", q:"Где будет приключение?", opts:[
+    ["🏠","Дома и во дворе"],["🌲","На даче или в лесу"],["🏰","В сказочной стране"],["🪐","В космосе"],["🐠","Под водой"],["🏙️","В большом городе"],["✨","Решите сами"]]},
+  {id:"mood", type:"one", q:"Какое настроение?", opts:[
+    ["😂","Смешное"],["🥹","Трогательное, до мурашек"],["🪄","Волшебное"],["🏁","Азартное приключение"]]},
+  {id:"cast", type:"many", q:"Кто ещё будет в мультфильме?", sub:"Можно выбрать несколько", other:true, opts:[
+    ["👩","Мама"],["👨","Папа"],["🧒","Брат или сестра"],["👵","Бабушка"],["👴","Дедушка"],["🐾","Питомец"],["👫","Друзья"],["⭐","Только герой"]]},
+  {id:"voice", type:"one", q:"Кто рассказывает историю?", opts:[
+    ["👩","Мама"],["👨","Папа"],["🧑","Сам герой, когда вырастет"],["📖","Сказочник"],["🎵","Без слов, только музыка"]]},
+  {id:"length", type:"one", q:"Какой длины мультфильм?", opts:[
+    ["⏱️","30 секунд","от 3 900 ₽"],["🎬","1 минута","от 6 900 ₽"],["🤔","Пока не знаю","подскажем"]]},
+  {id:"details", type:"text", q:"Пара живых деталей", sub:"Необязательно, но именно из этого получаются лучшие мультфильмы", fields:[
+    ["kid","Имя героя и как зовут дома","Миша, дома — Мишутка"],
+    ["toy","Любимая игрушка и как он(а) её называет","Синяя машинка «Молния»"],
+    ["words","Смешные словечки","Говорит «вжух!» и «я сам!»"],
+    ["story","Случай из жизни, который вспоминаете с улыбкой","Как он первый раз сам поехал на велосипеде…",true],
+    ["ritual","Семейный ритуал или фраза","Йогурт с хрустиками перед сном"],
+    ["avoid","Чего боится — этого не будет","Темноты, громких звуков"]]}
+];
+/* ================================== */
+
+const A = {};           // ответы
+const files = [];
+let i = -1;             // -1 — обложка, Q.length — контакты, Q.length+1 — готово
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function render(){
+  const v = $("#view");
+  $("#back").hidden = i < 0 || i > Q.length;
+  $("#barWrap").hidden = i < 0 || i > Q.length;
+  $("#bar").style.width = Math.round((Math.min(i, Q.length) + 1) / (Q.length + 1) * 100) + "%";
+  window.scrollTo(0, 0);
+
+  if (i < 0) {
+    v.innerHTML = `<div class="step">
+      <div class="cover"><img src="media/po_ogonek.jpg" alt="Кадр из мультфильма Lumio"></div>
+      <h1>Какой мультфильм подойдёт <em>вашему ребёнку?</em></h1>
+      <p class="muted">Ответьте на 10 коротких вопросов — около 2 минут. Мы придумаем историю, где главный герой ваш ребёнок, и пришлём идею сценария.</p>
+      <div class="foot"><button class="btn btn-gold" id="start" type="button">Начать</button>
+      <p class="hint">🎁 Эскиз героя — бесплатно для подписчиков канала @lumioRF</p></div></div>`;
+    $("#start").onclick = () => { i = 0; render(); };
+    return;
+  }
+  if (i < Q.length) return renderQ(Q[i]);
+  if (i === Q.length) return renderContact();
+  renderDone();
+}
+
+function renderQ(q){
+  const v = $("#view");
+  const head = `<span class="count">Вопрос ${i+1} из ${Q.length}</span><h2>${q.q}</h2>${q.sub?`<p class="muted small">${q.sub}</p>`:""}`;
+  if (q.type === "text") {
+    const d = A.details || {};
+    v.innerHTML = `<div class="step">${head}
+      ${q.fields.map(([k,l,p,area]) => `<div class="field"><label class="label" for="d-${k}">${l}</label>
+        ${area?`<textarea id="d-${k}" maxlength="500" placeholder="${p}">${esc(d[k]||"")}</textarea>`:`<input type="text" id="d-${k}" maxlength="150" placeholder="${p}" value="${esc(d[k]||"")}">`}</div>`).join("")}
+      <div class="foot"><button class="btn btn-gold" id="next" type="button">Дальше</button></div></div>`;
+    $("#next").onclick = () => { A.details = {}; q.fields.forEach(([k]) => { const x = $("#d-"+k).value.trim(); if (x) A.details[k] = x; }); i++; render(); };
+    return;
+  }
+  const many = q.type === "many";
+  const cur = A[q.id] || (many ? [] : "");
+  const sel = t => many ? cur.includes(t) : cur === t;
+  const otherVal = (A[q.id+"_other"] || "");
+  v.innerHTML = `<div class="step">${head}
+    <div class="opts ${q.opts.length<=5?"one":""}">${q.opts.map(([e,t,s]) =>
+      `<button class="opt" type="button" aria-pressed="${sel(t)}" data-t="${esc(t)}"><span class="e">${e}</span><b>${t}${s?`<small>${s}</small>`:""}</b></button>`).join("")}</div>
+    ${q.other?`<div class="field"><label class="label" for="other">${many?"Или своё":"Свой вариант"}</label><input type="text" id="other" maxlength="120" placeholder="Напишите своими словами" value="${esc(otherVal)}"></div>`:""}
+    <div class="foot">${many||q.other?`<button class="btn btn-gold" id="next" type="button">Дальше</button>`:""}</div></div>`;
+  const next = $("#next");
+  const upd = () => { if (next) next.disabled = !(many ? (A[q.id]||[]).length : A[q.id]) && !(($("#other")||{}).value||"").trim(); };
+  v.querySelectorAll(".opt").forEach(b => b.onclick = () => {
+    const t = b.dataset.t;
+    if (many) {
+      let arr = A[q.id] || [];
+      arr = arr.includes(t) ? arr.filter(x => x !== t) : [...arr, t];
+      A[q.id] = arr; b.setAttribute("aria-pressed", arr.includes(t));
+      upd();
+    } else {
+      A[q.id] = t; v.querySelectorAll(".opt").forEach(x => x.setAttribute("aria-pressed", x === b));
+      if ($("#other")) $("#other").value = "", A[q.id+"_other"] = "";
+      setTimeout(() => { i++; render(); }, 220);
+    }
+  });
+  if ($("#other")) $("#other").oninput = e => { A[q.id+"_other"] = e.target.value.trim(); if (!many && e.target.value.trim()) { A[q.id] = ""; v.querySelectorAll(".opt").forEach(x => x.setAttribute("aria-pressed", false)); } upd(); };
+  if (next) { upd(); next.onclick = () => { i++; render(); }; }
+}
+
+/* ответ на вопрос одной строкой */
+function val(id){
+  const a = A[id], o = A[id+"_other"];
+  const list = Array.isArray(a) ? [...a] : (a ? [a] : []);
+  if (o) list.push(o);
+  return list.join(", ");
+}
+
+/* короткая идея из ответов — чтобы человек сразу увидел «свой» мультфильм */
+function idea(){
+  const name = (A.details && A.details.kid) ? A.details.kid.split(/[,(—-]/)[0].trim() : "Ваш герой";
+  const loves = (val("loves") || "любимые игрушки").toLowerCase();
+  const world = {"Дома и во дворе":"дома и во дворе","На даче или в лесу":"на даче и в волшебном лесу","В сказочной стране":"в сказочной стране",
+    "В космосе":"среди звёзд и планет","Под водой":"в подводном царстве","В большом городе":"на улицах большого города"}[A.world] || "в мире, который мы придумаем специально для него";
+  const mood = {"Смешное":"смешное","Трогательное, до мурашек":"трогательное","Волшебное":"волшебное","Азартное приключение":"азартное"}[A.mood] || "доброе";
+  const ritual = A.details && A.details.ritual ? ` А в финале — ваш семейный ритуал: «${A.details.ritual}».` : " А в финале — тёплое возвращение домой.";
+  const he = {"Для сына":"он","Для папы":"он","Для дочки":"она","Для мамы":"она"}[A.who] || "он(а)";
+  return `${mood[0].toUpperCase()+mood.slice(1)} приключение ${world}. ${name} и золотой огонёк Lumio отправляются туда, где ждёт всё, что ${he} любит: ${loves}.${ritual}`;
+}
+
+function renderContact(){
+  const v = $("#view");
+  v.innerHTML = `<div class="step">
+    <span class="count">Почти готово</span><h2>Вот какой мультфильм может получиться</h2>
+    <div class="card"><p>${esc(idea())}</p><p class="small muted">Точный сценарий напишем по вашим ответам и фото.</p></div>
+    <div class="field"><label class="label" for="c-name">Как к вам обращаться</label><input type="text" id="c-name" maxlength="60" placeholder="Например, Анна" autocomplete="given-name"></div>
+    <div class="field"><label class="label" for="c-contact">Telegram или телефон</label><input type="text" id="c-contact" maxlength="60" placeholder="@username или +7…"></div>
+    <div class="field"><span class="label">Фото героя (по желанию)</span>
+      <label class="drop" for="c-photos"><b>Добавить фото</b><span class="small muted">Лицо крупно, при хорошем свете — для бесплатного эскиза</span></label>
+      <input type="file" id="c-photos" accept="image/*" multiple hidden><div class="thumbs" id="thumbs"></div></div>
+    <label class="consent"><input type="checkbox" id="c-ok">Согласен(на) на обработку персональных данных, включая фотографии</label>
+    <p class="err" id="err" hidden></p>
+    <div class="foot"><button class="btn btn-gold" id="send" type="button">Получить сценарий</button>
+    <p class="hint">Ответим в Telegram в течение часа</p></div></div>`;
+  $("#c-photos").onchange = e => {
+    files.length = 0; files.push(...[...e.target.files].slice(0,6));
+    $("#thumbs").innerHTML = ""; files.forEach(f => { const im = new Image(); im.src = URL.createObjectURL(f); im.alt = ""; $("#thumbs").append(im); });
+  };
+  $("#send").onclick = send;
+}
+
+function shrink(file, max=1600, q=0.8){
+  return new Promise(res => {
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => { const k = Math.min(1, max/Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement("canvas"); c.width = Math.round(img.naturalWidth*k); c.height = Math.round(img.naturalHeight*k);
+      c.getContext("2d").drawImage(img,0,0,c.width,c.height); URL.revokeObjectURL(url); c.toBlob(b => res(b), "image/jpeg", q); };
+    img.onerror = () => { URL.revokeObjectURL(url); res(null); };
+    img.src = url;
+  });
+}
+
+function orderText(){
+  const d = A.details || {};
+  const rows = [
+    ["Для кого", val("who")], ["Возраст", val("age")], ["Любит", val("loves")], ["Мир", val("world")],
+    ["Настроение", val("mood")], ["Рассказчик", val("voice")], ["Имя и прозвище", d.kid], ["Любимая игрушка", d.toy],
+    ["Словечки", d.words], ["Случай из жизни", d.story], ["Семейный ритуал", d.ritual], ["Чего избегать", d.avoid]
+  ].filter(r => r[1]);
+  return "Квиз «Какой мультфильм подойдёт»:\n" + rows.map(r => "• " + r[0] + ": " + r[1]).join("\n") + "\n\nИдея: " + idea();
+}
+
+async function send(){
+  const name = $("#c-name").value.trim(), contact = $("#c-contact").value.trim();
+  const err = m => { $("#err").textContent = m; $("#err").hidden = false; };
+  if (!name || !contact) return err("Укажите имя и контакт — без них мы не сможем ответить.");
+  if (!$("#c-ok").checked) return err("Отметьте согласие на обработку данных.");
+  $("#err").hidden = true;
+  const b = $("#send"); b.disabled = true; b.textContent = "Отправляем…";
+  const order = { name, contact, occasion: val("occasion") || "—", heroes: [val("who"), val("age"), val("cast")].filter(Boolean).join("; "),
+    story: orderText(), date: "", calc: { text: val("length") || "не выбрано" }, photos: 0, source: SOURCE };
+  A._name = name; A._text = orderText();
+  try {
+    const fd = new FormData(); let total = 0, n = 0;
+    for (const f of files) { const bl = await shrink(f); if (!bl || total + bl.size > 3e6) continue; total += bl.size; fd.append("photo"+n, bl, "photo"+n+".jpg"); n++; }
+    order.photos = n; fd.append("order", JSON.stringify(order));
+    const r = await fetch(ENDPOINT, { method: "POST", body: fd });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    A._sent = true;
+  } catch (_) { A._sent = false; }
+  i = Q.length + 1; render();
+}
+
+function renderDone(){
+  const v = $("#view");
+  v.innerHTML = A._sent ? `<div class="step">
+      <span class="done">Спасибо, ${esc(A._name)}!</span>
+      <p>Заявка у нас. Сказочник Lumio напишет вам в течение часа и пришлёт идею сценария.</p>
+      <div class="card"><p>${esc(idea())}</p></div>
+      <div class="foot"><a class="btn btn-gold" href="https://t.me/lumioRF">Посмотреть наши мультфильмы</a>
+      <p class="hint">🎁 Подпишитесь на канал — эскиз героя будет бесплатным</p></div></div>`
+    : `<div class="step">
+      <h2>Почти получилось</h2>
+      <p class="muted">Не удалось отправить автоматически. Скопируйте ответы и пришлите их нам в Telegram — ответим в течение часа.</p>
+      <textarea id="txt" readonly style="min-height:200px">${esc(A._text)}</textarea>
+      <div class="foot"><button class="btn btn-ghost" id="copy" type="button">Скопировать ответы</button>
+      <a class="btn btn-gold" href="${MANAGER}">Написать в Telegram</a></div></div>`;
+  if ($("#copy")) $("#copy").onclick = () => { const t = $("#txt"); t.select(); try { navigator.clipboard.writeText(t.value); } catch(_) { document.execCommand("copy"); } $("#copy").textContent = "Скопировано ✓"; };
+}
+
+$("#back").onclick = () => { if (i > 0) { i--; render(); } else { i = -1; render(); } };
+render();
+
+/* звёзды на фоне */
+(function(){ const c = $("#stars"), x = c.getContext("2d"); let s = [];
+  function size(){ c.width = innerWidth * devicePixelRatio; c.height = innerHeight * devicePixelRatio;
+    s = Array.from({length: 70}, () => [Math.random()*c.width, Math.random()*c.height, Math.random()*1.4+.3, Math.random()*6.28]); }
+  function draw(t){ x.clearRect(0,0,c.width,c.height); s.forEach(p => { x.globalAlpha = .35 + .35*Math.sin(t/900 + p[3]); x.fillStyle = "#f3ecdf";
+    x.beginPath(); x.arc(p[0], p[1], p[2]*devicePixelRatio, 0, 6.28); x.fill(); });
+    if (!matchMedia("(prefers-reduced-motion: reduce)").matches) requestAnimationFrame(draw); }
+  addEventListener("resize", size); size(); requestAnimationFrame(draw); })();
+</script>
+</body>
+</html>
