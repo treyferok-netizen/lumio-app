@@ -254,7 +254,7 @@ function renderContact(){
 let AI = null, aiKey = "", aiBusy = false;
 function idea(){ return AI && AI.idea ? AI.idea : ideaTemplate(); }
 function ideaCardHTML(){
-  if (aiBusy) return `<p class="thinking">✨ Нейросеть придумывает историю по вашим ответам…</p>`;
+  if (aiBusy) return `<p class="thinking">✨ Сказочник Lumio уже придумывает вашу историю…</p>`;
   return (AI && AI.title ? `<p class="itl">«${esc(AI.title)}»</p>` : "") + `<p>${esc(idea())}</p><p class="small muted">Точный сценарий напишем по вашим ответам и фото.</p>`;
 }
 async function loadIdea(){
