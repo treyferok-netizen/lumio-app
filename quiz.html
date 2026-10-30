@@ -77,6 +77,9 @@ input:focus,textarea:focus,.opt:focus-visible,.btn:focus-visible{outline:2px sol
 .thumbs{display:flex;gap:6px;flex-wrap:wrap}
 .thumbs img{width:56px;height:56px;object-fit:cover;border-radius:10px;border:1px solid var(--line)}
 .err{color:var(--rose);font-size:13px}
+.thinking{color:var(--lantern);animation:pulse 1.4s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.45}}
+.itl{font-family:var(--f-display);font-size:19px;color:var(--lantern);margin-bottom:6px!important}
 .done{font-family:var(--f-display);font-size:28px;color:var(--lantern)}
 </style>
 </head>
@@ -95,6 +98,7 @@ input:focus,textarea:focus,.opt:focus-visible,.btn:focus-visible{outline:2px sol
 <script>
 /* ============ НАСТРОЙКИ ============ */
 const ENDPOINT = "https://193-32-178-96.sslip.io/order";   // заявка уходит боту Lumio, бот присылает её вам
+const IDEA_ENDPOINT = "https://193-32-178-96.sslip.io/idea"; // нейросеть придумывает идею по ответам (YandexGPT)
 const MANAGER = "https://t.me/creatormult";                  // запасной путь, если сервер недоступен
 const SOURCE = (new URLSearchParams(location.search).get("src") || "quiz").slice(0,40);
 
@@ -206,7 +210,7 @@ function val(id){
 }
 
 /* короткая идея из ответов — чтобы человек сразу увидел «свой» мультфильм */
-function idea(){
+function ideaTemplate(){
   const name = (A.details && A.details.kid) ? A.details.kid.split(/[,(—-]/)[0].trim() : "Ваш герой";
   const loves = (val("loves") || "любимые игрушки").toLowerCase();
   const world = {"Дома и во дворе":"дома и во дворе","На даче или в лесу":"на даче и в волшебном лесу","В сказочной стране":"в сказочной стране",
@@ -228,7 +232,7 @@ function renderContact(){
   const v = $("#view");
   v.innerHTML = `<div class="step">
     <span class="count">Почти готово</span><h2>Вот какой мультфильм может получиться</h2>
-    <div class="card"><p>${esc(idea())}</p><p class="small muted">Точный сценарий напишем по вашим ответам и фото.</p></div>
+    <div class="card" id="ideaCard">${ideaCardHTML()}</div>
     <div class="field"><label class="label" for="c-name">Как к вам обращаться</label><input type="text" id="c-name" maxlength="60" placeholder="Например, Анна" autocomplete="given-name"></div>
     <div class="field"><label class="label" for="c-contact">Telegram или телефон</label><input type="text" id="c-contact" maxlength="60" placeholder="@username или +7…"></div>
     <div class="field"><span class="label">Фото героя (по желанию)</span>
@@ -243,6 +247,28 @@ function renderContact(){
     $("#thumbs").innerHTML = ""; files.forEach(f => { const im = new Image(); im.src = URL.createObjectURL(f); im.alt = ""; $("#thumbs").append(im); });
   };
   $("#send").onclick = send;
+  loadIdea();
+}
+
+/* ---- идея от нейросети: один запрос на набор ответов, при ошибке — шаблон ---- */
+let AI = null, aiKey = "", aiBusy = false;
+function idea(){ return AI && AI.idea ? AI.idea : ideaTemplate(); }
+function ideaCardHTML(){
+  if (aiBusy) return `<p class="thinking">✨ Нейросеть придумывает историю по вашим ответам…</p>`;
+  return (AI && AI.title ? `<p class="itl">«${esc(AI.title)}»</p>` : "") + `<p>${esc(idea())}</p><p class="small muted">Точный сценарий напишем по вашим ответам и фото.</p>`;
+}
+async function loadIdea(){
+  const key = answersText();
+  if (key === aiKey && (AI || aiBusy)) { $("#ideaCard").innerHTML = ideaCardHTML(); return; }
+  aiKey = key; AI = null; aiBusy = true; $("#ideaCard").innerHTML = ideaCardHTML();
+  try {
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 25000);
+    const r = await fetch(IDEA_ENDPOINT, { method: "POST", headers: { "Content-Type": "text/plain" }, body: JSON.stringify({ answers: key }), signal: ctl.signal });
+    clearTimeout(t);
+    const j = await r.json();
+    if (j && j.ok && j.idea && aiKey === key) AI = { title: j.title || "", idea: j.idea };
+  } catch (_) {}
+  if (aiKey === key) { aiBusy = false; const c = $("#ideaCard"); if (c) c.innerHTML = ideaCardHTML(); }
 }
 
 function shrink(file, max=1600, q=0.8){
@@ -256,14 +282,17 @@ function shrink(file, max=1600, q=0.8){
   });
 }
 
-function orderText(){
+function answersText(){
   const d = A.details || {};
   const rows = [
-    ["Для кого", val("who")], ["Возраст", val("age")], ["Любит", val("loves")], ["Мир", val("world")],
-    ["Настроение", val("mood")], ["Рассказчик", val("voice")], ["Имя и прозвище", d.kid], ["Любимая игрушка", d.toy],
+    ["Для кого", val("who")], ["Возраст", val("age")], ["Повод", val("occasion")], ["Любит", val("loves")], ["Мир", val("world")],
+    ["Настроение", val("mood")], ["Кто ещё", val("cast")], ["Рассказчик", val("voice")], ["Имя и прозвище", d.kid], ["Любимая игрушка", d.toy],
     ["Словечки", d.words], ["Случай из жизни", d.story], ["Семейный ритуал", d.ritual], ["Чего избегать", d.avoid]
   ].filter(r => r[1]);
-  return "Квиз «Какой мультфильм подойдёт»:\n" + rows.map(r => "• " + r[0] + ": " + r[1]).join("\n") + "\n\nИдея: " + idea();
+  return rows.map(r => "• " + r[0] + ": " + r[1]).join("\n");
+}
+function orderText(){
+  return "Квиз «Какой мультфильм подойдёт»:\n" + answersText() + "\n\n" + (AI ? "Идея нейросети" + (AI.title ? " «" + AI.title + "»" : "") : "Идея (шаблон)") + ": " + idea();
 }
 
 async function send(){
