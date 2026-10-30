@@ -123,12 +123,17 @@ def build(spec, resolve, out_path, log=print):
         filters.append("".join(amix) + f"amix=inputs={len(amix)}:normalize=0:duration=longest,"
                        f"atrim=0:{total:.3f}[aout]")
     args += ["-filter_complex", ";".join(filters), "-map", f"[{cur}]"]
+    # кодирование: по умолчанию быстрое рабочее; для Telegram — "encode": {"preset":"slow","crf":21,"maxrate":"3M","audio":"160k"}
+    enc = spec.get("encode") or {}
     if amix:
-        args += ["-map", "[aout]", "-c:a", "aac", "-b:a", "192k"]
+        args += ["-map", "[aout]", "-c:a", "aac", "-b:a", str(enc.get("audio", "192k"))]
     else:
         args += ["-an"]
-    args += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-pix_fmt", "yuv420p",
-             "-movflags", "+faststart", "-t", f"{total:.3f}", out_path]
+    args += ["-c:v", "libx264", "-preset", str(enc.get("preset", "veryfast")), "-crf", str(enc.get("crf", 19))]
+    if enc.get("maxrate"):
+        mr = str(enc["maxrate"])
+        args += ["-maxrate", mr, "-bufsize", str(enc.get("bufsize") or (str(int(float(mr.rstrip("Mk")) * 2)) + mr[-1]))]
+    args += ["-pix_fmt", "yuv420p", "-movflags", "+faststart", "-t", f"{total:.3f}", out_path]
     log("ffmpeg: " + " ".join(a if len(a) < 200 else a[:200] + "…" for a in args))
     p = subprocess.run(args, capture_output=True, text=True, timeout=3600)
     if p.returncode != 0:
