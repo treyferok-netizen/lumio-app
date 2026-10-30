@@ -118,6 +118,14 @@ class Web(BaseHTTPRequestHandler):
                 data = f.read()
             ctype = {".mp4": "video/mp4", ".png": "image/png", ".mp3": "audio/mpeg", ".wav": "audio/wav",
                      ".m4a": "audio/mp4"}.get(os.path.splitext(fp)[1], "image/jpeg")
+            if "download" in self.path.partition("?")[2]:   # ?download=1 — браузер скачает файл
+                self.send_response(200)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Content-Disposition", f'attachment; filename="{os.path.basename(fp)}"')
+                self.end_headers()
+                self.wfile.write(data)
+                return
             return self._raw(200, data, ctype)
         ev = self._event("GET")
         src = (ev or {}).get("queryStringParameters", {}).get("src")
