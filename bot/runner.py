@@ -115,7 +115,8 @@ class Web(BaseHTTPRequestHandler):
                 return self._raw(404, b'{"error":"not found"}')
             with open(fp, "rb") as f:
                 data = f.read()
-            return self._raw(200, data, "image/png" if fp.endswith(".png") else "image/jpeg")
+            ctype = "video/mp4" if fp.endswith(".mp4") else "image/png" if fp.endswith(".png") else "image/jpeg"
+            return self._raw(200, data, ctype)
         ev = self._event("GET")
         src = (ev or {}).get("queryStringParameters", {}).get("src")
         if src == "diag":

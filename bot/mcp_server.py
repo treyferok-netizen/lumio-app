@@ -55,7 +55,7 @@ def _save(data, ext="jpg"):
 
 def file_path(name):
     """Путь к файлу для GET /files/<name> (только наши имена, без ../)."""
-    if not name or "/" in name or "\\" in name or name.startswith(".") or not name.endswith((".jpg", ".png")):
+    if not name or "/" in name or "\\" in name or name.startswith(".") or not name.endswith((".jpg", ".png", ".mp4")):
         return None
     p = os.path.join(GEN_DIR, name)
     return p if os.path.isfile(p) else None
@@ -252,6 +252,21 @@ def kling_upload(args):
     return (_text if r.ok else _err)(f"Kling HTTP {r.status_code}: {r.text[:1500]}")
 
 
+def save_video(args, host):
+    import re
+    data, ctype = _fetch(args.get("url", ""), limit=400 * 1024 * 1024)
+    if not data[4:8] == b"ftyp" and "mp4" not in ctype:
+        return _err(f"Это не похоже на mp4 (Content-Type: {ctype}).")
+    base = re.sub(r"[^a-zA-Z0-9_-]", "", args.get("name") or "") or ("video-" + secrets.token_hex(4))
+    name = base + ".mp4"
+    os.makedirs(GEN_DIR, exist_ok=True)
+    if os.path.exists(os.path.join(GEN_DIR, name)):
+        name = f"{base}-{secrets.token_hex(3)}.mp4"
+    with open(os.path.join(GEN_DIR, name), "wb") as f:
+        f.write(data)
+    return _text(f"Сохранено: {_url(name, host)} ({len(data) // 1024 // 1024} МБ)")
+
+
 def server_update():
     import subprocess
     repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -325,6 +340,12 @@ TOOLS = [
      "description": "Обновить бота и коннектор на сервере до последней версии из GitHub (git pull + pip + перезапуск). "
                     "Только фиксированный репозиторий, без произвольных команд. Бесплатно.",
      "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "save_video",
+     "description": "Сохранить видео по ссылке (например, результат Kling) на сервер Lumio навсегда и получить постоянную ссылку. Бесплатно.",
+     "inputSchema": {"type": "object", "properties": {
+         "url": {"type": "string"},
+         "name": {"type": "string", "description": "имя файла латиницей, напр. ogonek_s1 (без расширения)"}},
+         "required": ["url"]}},
     {"name": "seedream_status",
      "description": "Подключён ли ключ, модель, сколько картинок осталось на сегодня по лимиту.",
      "inputSchema": {"type": "object", "properties": {}}},
@@ -343,6 +364,8 @@ def _call(name, args, host):
         return _image_result(_save(data, "png" if ctype == "image/png" else "jpg"), host, "Сохранено.")
     if name == "kling_upload":
         return kling_upload(args)
+    if name == "save_video":
+        return save_video(args, host)
     if name == "server_update":
         return server_update()
     if name == "seedream_status":
