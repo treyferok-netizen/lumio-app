@@ -102,7 +102,14 @@ def build(spec, resolve, out_path, log=print):
         f += f"[a{j}]"
         filters.append(f)
         amix.append(f"[a{j}]")
-    if amix:
+    duck = [f"[a{j}]" for j, a in enumerate(auds) if a.get("duck")]
+    main = [f"[a{j}]" for j, a in enumerate(auds) if not a.get("duck")]
+    if duck and main:   # музыка приглушается под голосом (sidechain)
+        filters.append("".join(main) + f"amix=inputs={len(main)}:normalize=0:duration=longest,asplit=2[vo][sc]")
+        filters.append("".join(duck) + f"amix=inputs={len(duck)}:normalize=0:duration=longest[mus]")
+        filters.append("[mus][sc]sidechaincompress=threshold=0.02:ratio=6:attack=40:release=600:makeup=1[musd]")
+        filters.append(f"[vo][musd]amix=inputs=2:normalize=0:duration=longest,alimiter=limit=0.95,atrim=0:{total:.3f}[aout]")
+    elif amix:
         filters.append("".join(amix) + f"amix=inputs={len(amix)}:normalize=0:duration=longest,"
                        f"atrim=0:{total:.3f}[aout]")
     args += ["-filter_complex", ";".join(filters), "-map", f"[{cur}]"]

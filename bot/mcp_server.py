@@ -362,10 +362,12 @@ def kling_upload(args):
 def save_video(args, host):
     import re
     data, ctype = _fetch(args.get("url", ""), limit=400 * 1024 * 1024)
-    if not data[4:8] == b"ftyp" and "mp4" not in ctype:
+    ext = args.get("ext") or "mp4"
+    if ext == "mp4" and not data[4:8] == b"ftyp" and "mp4" not in ctype:
         return _err(f"Это не похоже на mp4 (Content-Type: {ctype}).")
-    base = re.sub(r"[^a-zA-Z0-9_-]", "", args.get("name") or "") or ("video-" + secrets.token_hex(4))
-    name = base + ".mp4"
+    kind = "video" if ext == "mp4" else "audio"
+    base = re.sub(r"[^a-zA-Z0-9_-]", "", args.get("name") or "") or (kind + "-" + secrets.token_hex(4))
+    name = base + "." + ext
     os.makedirs(GEN_DIR, exist_ok=True)
     if os.path.exists(os.path.join(GEN_DIR, name)):
         name = f"{base}-{secrets.token_hex(3)}.mp4"
@@ -487,8 +489,9 @@ def _call(name, args, host):
     if name == "video_frame":
         return frame_tool(args, host)
     if name == "save_image":
-        if ".mp4" in args.get("url", "").split("?")[0]:      # видео — сохраняем как mp4
-            return save_video({"url": args["url"], "name": args.get("name")}, host)
+        _path = args.get("url", "").split("?")[0].lower()
+        if _path.endswith((".mp4", ".mp3", ".wav", ".m4a")):  # видео/звук — сохраняем как есть
+            return save_video({"url": args["url"], "name": args.get("name"), "ext": _path.rsplit(".", 1)[1]}, host)
         data, ctype = _fetch(args.get("url", ""))
         return _image_result(_save(data, "png" if ctype == "image/png" else "jpg"), host, "Сохранено.")
     if name == "kling_upload":
