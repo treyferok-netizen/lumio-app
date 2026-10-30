@@ -120,6 +120,12 @@ textarea{min-height:110px;resize:vertical}
 input::placeholder,textarea::placeholder{color:#6f6695}
 .drop{border:1.5px dashed var(--line);border-radius:14px;padding:16px;text-align:center;cursor:pointer;background:var(--sky-2);display:flex;flex-direction:column;gap:4px;align-items:center}
 .drop:hover{border-color:var(--lantern)}
+.quiz{border:1px solid rgba(242,196,109,.35);background:rgba(242,196,109,.06);border-radius:14px;padding:12px 14px}
+.quiz summary{cursor:pointer;list-style:none;display:flex;flex-direction:column;gap:3px;padding-right:22px;position:relative}
+.quiz summary::-webkit-details-marker{display:none}
+.quiz summary::after{content:"+";position:absolute;right:0;top:-2px;font-size:22px;font-weight:700;color:var(--lantern)}
+.quiz[open] summary::after{content:"−"}
+.quiz textarea{min-height:80px}
 .thumbs{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 .thumbs img{aspect-ratio:1;object-fit:cover;border-radius:10px;width:100%;border:1px solid var(--line)}
 .consent{display:flex;gap:10px;align-items:flex-start;font-size:13px;color:var(--mist);cursor:pointer}
@@ -245,6 +251,38 @@ input::placeholder,textarea::placeholder{color:#6f6695}
 
       <div class="field"><label class="label" for="f-story">Ваша история</label>
         <textarea id="f-story" placeholder="Что любит герой, какой момент хотите оживить, что обязательно должно быть в мультфильме…"></textarea></div>
+
+      <details class="quiz" id="quiz">
+        <summary><b>Расскажите о герое подробнее</b><span class="small muted">по желанию, 2 минуты — так мультфильм будет точно про вашего ребёнка, а не по шаблону</span></summary>
+        <div class="stack" style="gap:12px;margin-top:12px">
+          <div class="row2">
+            <div class="field"><label class="label" for="q-kid">Имя и прозвище</label>
+              <input type="text" id="q-kid" maxlength="80" data-q="Имя и как зовут дома" placeholder="Миша, дома — Мишутка"></div>
+            <div class="field"><label class="label" for="q-age">Возраст</label>
+              <input type="text" id="q-age" maxlength="20" data-q="Возраст" placeholder="4 года"></div>
+          </div>
+          <div class="field"><label class="label" for="q-loves">Что он(а) любит больше всего прямо сейчас</label>
+            <input type="text" id="q-loves" maxlength="200" data-q="Любит" placeholder="Машинки, гонки, велосипед, сказку про Изумрудный город"></div>
+          <div class="field"><label class="label" for="q-toy">Любимая игрушка и как он(а) её называет</label>
+            <input type="text" id="q-toy" maxlength="120" data-q="Любимая игрушка" placeholder="Синяя машинка — «Молния»"></div>
+          <div class="field"><label class="label" for="q-words">Смешные словечки и фразы</label>
+            <input type="text" id="q-words" maxlength="200" data-q="Словечки" placeholder="Говорит «вжух!» и «я сам!»"></div>
+          <div class="field"><label class="label" for="q-case">Случай из жизни, который вспоминаете с улыбкой</label>
+            <textarea id="q-case" maxlength="500" data-q="Случай из жизни" placeholder="Как он первый раз сам поехал на велосипеде…"></textarea></div>
+          <div class="field"><label class="label" for="q-dream">О чём мечтает</label>
+            <input type="text" id="q-dream" maxlength="150" data-q="Мечтает" placeholder="Обогнать папу на велосипеде"></div>
+          <div class="field"><label class="label" for="q-ritual">Семейный ритуал или фраза</label>
+            <input type="text" id="q-ritual" maxlength="150" data-q="Семейный ритуал" placeholder="Йогурт с хрустиками перед сном, «спокойной ночи, чемпион»"></div>
+          <div class="field"><label class="label" for="q-fear">Чего боится или что не любит — этого не будет в мультфильме</label>
+            <input type="text" id="q-fear" maxlength="150" data-q="Чего избегать" placeholder="Темноты, громких звуков"></div>
+          <div class="row2">
+            <div class="field"><label class="label" for="q-mood">Настроение</label>
+              <select id="q-mood" data-q="Настроение"><option value="">Не важно</option><option>Смешное</option><option>Трогательное</option><option>Сказочное, волшебное</option></select></div>
+            <div class="field"><label class="label" for="q-voice">Кто рассказывает</label>
+              <select id="q-voice" data-q="Рассказчик"><option value="">Решите сами</option><option>Мама</option><option>Папа</option><option>Сам герой, когда вырастет</option><option>Сказочник</option></select></div>
+          </div>
+        </div>
+      </details>
 
       <div class="field"><label class="label" for="f-date">Нужно готово к</label>
         <input type="date" id="f-date"></div>
@@ -516,13 +554,19 @@ $("#f-photos").addEventListener("change",e=>{
   files=[...e.target.files].slice(0,10);
   $("#thumbs").innerHTML="";files.forEach(f=>{const r=new FileReader();r.onload=()=>{const i=new Image();i.src=r.result;i.alt="";$("#thumbs").append(i);};r.readAsDataURL(f);});
 });
+/* анкета героя (необязательная) дописывается к истории — бот и CRM получают её как есть */
+function withQuiz(story){
+  const rows=[...document.querySelectorAll("#quiz [data-q]")].map(el=>[el.dataset.q,el.value.trim()]).filter(r=>r[1]);
+  if(!rows.length) return story;
+  return (story?story+"\n\n":"")+"Анкета героя:\n"+rows.map(r=>"• "+r[0]+": "+r[1]).join("\n");
+}
 function collect(){
   const oid=$("#f-occasion").value, other=$("#f-other").value.trim();
   const occ=oid==="other"?(other?"Другое: "+other:"Другой повод"):CONFIG.occasions.find(o=>o.id===oid).name;
   const dv=$("#f-date").value;
   return {
     name:$("#f-name").value.trim(), contact:$("#f-contact").value.trim(), occasion:occ,
-    heroes:$("#f-heroes").value.trim(), story:$("#f-story").value.trim(),
+    heroes:$("#f-heroes").value.trim(), story:withQuiz($("#f-story").value.trim()),
     date: dv?new Date(dv).toLocaleDateString("ru-RU",{day:"numeric",month:"long",year:"numeric"}):"",
     calc:choice(), photos:files.length, source:startSource(),
     tgUser: tg && tg.initDataUnsafe && tg.initDataUnsafe.user ? {id:tg.initDataUnsafe.user.id, username:tg.initDataUnsafe.user.username||""} : null
@@ -588,7 +632,7 @@ async function sendOrder(o){
     return "sent";
   }
   if (tg && tg.sendData && tg.initDataUnsafe && !tg.initDataUnsafe.query_id) {
-    const p={...o, story:o.story.slice(0,1500)};
+    const p={...o, story:o.story.slice(0,2800)};
     tg.sendData(JSON.stringify(p).slice(0,4000));
     return "sent";
   }
