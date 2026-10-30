@@ -300,6 +300,7 @@ IDEA_SYSTEM = """Ты — сценарист студии персональны
 - Одна простая цель, одна смешная мультяшная неудача (плюхнулся, застрял, перепутал), герой справляется сам или с близкими, тёплый финал дома с семейным ритуалом, если он есть.
 - Пиши живо, в настоящем времени, как короткий пересказ мультфильма, с одной неожиданной смешной деталью.
 - Без злодеев, страшного, травм и слёз. Подходит для просмотра перед сном.
+- Если родитель назвал игрушку или героя известного мультфильма (например, Молния Маккуин), НЕ называй его и не пиши «похожий на»: опиши просто как вещь ребёнка («его красная гоночная машинка», «любимая машинка»).
 - Только свои персонажи. Нельзя: Маша и Медведь, Смешарики, Фиксики, Синий трактор, Тачки, Молния Маккуин, Элли, Страшила, Тотошка, Disney, Pixar, Marvel, любые известные мультгерои и бренды.
 - Учитывай возраст героя и выбранное настроение. Малыш до 2 лет почти не говорит и не совершает сложных действий: история о простом (первые шаги, игрушка, мама и папа рядом), волшебство вокруг него. С 3 лет герой действует сам («я сам!»), с 7 лет — настоящее приключение с выдумкой.
 - Не упоминай цены, сроки, огонёк и студию.
@@ -309,6 +310,7 @@ IDEA_SYSTEM = """Ты — сценарист студии персональны
 Название: <2–5 слов>
 Идея: <3–4 предложения, до 450 знаков>"""
 _idea_hits = {}
+BANNED_IP = re.compile(r"ма[кк]{1,2}у?и[нн]|маквин|mcqueen|молни[яи]\s+ма|тачк[иа]|маш[аи]\s+и\s+медвед|смешарик|фиксик|синий\s+трактор|щенячий\s+патрул|элли\b|страшил|тотошк|дисне|disney|pixar|пиксар|marvel|марвел|человек.паук|эльз[аы]\b|холодное\s+сердце", re.I)
 
 
 def gen_idea(answers, ip="", context=None):
@@ -321,19 +323,28 @@ def gen_idea(answers, ip="", context=None):
     auth = iam_headers(context)
     if not FOLDER or not auth:
         return None
-    body = {
-        "modelUri": f"gpt://{FOLDER}/{IDEA_MODEL}",
-        "completionOptions": {"stream": False, "temperature": 0.7, "maxTokens": "400"},
-        "messages": [{"role": "system", "text": IDEA_SYSTEM},
-                     {"role": "user", "text": "Ответы родителя:\n" + str(answers)[:2500]}],
-    }
-    try:
-        r = requests.post("https://llm.api.cloud.yandex.net/foundationModels/v1/completion",
-                          json=body, headers={**auth, "x-folder-id": FOLDER}, timeout=(5, 25))
-        r.raise_for_status()
-        text = r.json()["result"]["alternatives"][0]["message"]["text"].strip()
-    except Exception as e:
-        print("idea error", e)
+    user_text = "Ответы родителя:\n" + str(answers)[:2500]
+    text = None
+    for attempt in range(2):
+        body = {
+            "modelUri": f"gpt://{FOLDER}/{IDEA_MODEL}",
+            "completionOptions": {"stream": False, "temperature": 0.7, "maxTokens": "400"},
+            "messages": [{"role": "system", "text": IDEA_SYSTEM}, {"role": "user", "text": user_text}],
+        }
+        try:
+            r = requests.post("https://llm.api.cloud.yandex.net/foundationModels/v1/completion",
+                              json=body, headers={**auth, "x-folder-id": FOLDER}, timeout=(5, 25))
+            r.raise_for_status()
+            text = r.json()["result"]["alternatives"][0]["message"]["text"].strip()
+        except Exception as e:
+            print("idea error", e)
+            return None
+        if not BANNED_IP.search(text):
+            break
+        # в тексте всплыл чужой персонаж — просим переписать один раз, иначе отдаём шаблон
+        user_text += "\n\nВажно: не упоминай никаких известных мультгероев и брендов, даже как сравнение «похож на». Опиши игрушку просто как вещь ребёнка."
+        text = None
+    if not text:
         return None
     m_t = re.search(r"Название:\s*(.+)", text)
     m_i = re.search(r"Идея:\s*([\s\S]+)", text)
