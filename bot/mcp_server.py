@@ -360,6 +360,8 @@ def _call(name, args, host):
     if name == "video_frame":
         return frame_tool(args, host)
     if name == "save_image":
+        if ".mp4" in args.get("url", "").split("?")[0]:      # видео — сохраняем как mp4
+            return save_video({"url": args["url"], "name": args.get("name")}, host)
         data, ctype = _fetch(args.get("url", ""))
         return _image_result(_save(data, "png" if ctype == "image/png" else "jpg"), host, "Сохранено.")
     if name == "kling_upload":
