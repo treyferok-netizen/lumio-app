@@ -589,6 +589,9 @@ def forward_to_admin(msg, user, head):
         tg("copyMessage", {"chat_id": ADMIN, "from_chat_id": chat_id, "message_id": msg["message_id"]})
 
 
+_quiz_notified = {}  # chat_id -> время последнего уведомления «пришёл за квизом»
+
+
 def handle_client(msg, context):
     chat_id = msg["chat"]["id"]
     user = msg.get("from", {})
@@ -607,7 +610,10 @@ def handle_client(msg, context):
                       "10 коротких вопросов — около 2 минут. В конце сказочник Lumio придумает историю, "
                       "где главный герой ваш ребёнок.",
              reply_markup={"inline_keyboard": [[{"text": "✨ Пройти квиз", "url": QUIZ_URL}]]})
-        if ADMIN and text.startswith("/start"):
+        # уведомление — один раз в 12 часов на человека (ссылку часто нажимают повторно)
+        last = _quiz_notified.get(chat_id, 0)
+        if ADMIN and text.startswith("/start") and time.time() - last > 12 * 3600:
+            _quiz_notified[chat_id] = time.time()
             send(ADMIN, f"👋 Новый человек в боте (квиз): {who(user)} {tag}")
         return
     # обязательная подписка (кроме клиентов, с которыми уже общается менеджер)
@@ -685,7 +691,19 @@ def handle_client(msg, context):
         send(ADMIN, body)
 
 
+_updates_seen = {}  # update_id -> время: Telegram иногда присылает одно и то же обновление повторно
+
+
 def handle_update(update, context):
+    uid = update.get("update_id")
+    if uid is not None:
+        now = time.time()
+        if uid in _updates_seen:
+            return
+        _updates_seen[uid] = now
+        if len(_updates_seen) > 2000:
+            for k in [k for k, t in _updates_seen.items() if now - t > 3600]:
+                _updates_seen.pop(k, None)
     if update.get("callback_query"):
         handle_callback(update["callback_query"])
         return
