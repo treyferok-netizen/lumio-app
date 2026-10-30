@@ -171,6 +171,8 @@ def _job_result(job_id, host):
         return _text(f"Ещё генерируется ({int(time.time() - job['ts'])} с). Проверьте позже: seedream_result job_id={job_id}")
     if job["status"] == "error":
         return _err(("Монтаж: " if job.get("kind") == "edit" else "Seedream ответил ошибкой: ") + job["error"])
+    if job.get("kind") == "audio":
+        return _text(f"Звук готов: {_url(job['file'], host)} job_id={job_id}")
     if job.get("kind") == "edit":
         return _text(f"Монтаж готов: {_url(job['file'], host)} ({job['duration']:.1f} с). job_id={job_id}")
     return _image_result(job["file"], host, f"Готово. job_id={job_id}. Осталось сегодня: {seedream.left_today()}")
@@ -242,8 +244,65 @@ def edit_tool(spec, host):
     return _job_result(job_id, host)
 
 
+def audio_job(kind, fn, base, host):
+    """Платная генерация звука ElevenLabs — одна за раз, как и картинки."""
+    import eleven
+    if not eleven.ready():
+        return _err("На сервере нет ключа ElevenLabs: read -s K; lumio-set ELEVENLABS_API_KEY \"$K\"")
+    if not _busy.acquire(blocking=False):
+        return _err("Уже идёт платная генерация (одна за раз).")
+    job_id = "a" + secrets.token_hex(5)
+    _jobs[job_id] = {"status": "running", "ts": time.time(), "prompt": kind, "kind": "audio"}
+
+    def run():
+        try:
+            data = fn()
+            name = f"{re.sub(r'[^a-zA-Z0-9_-]', '', base or kind) or kind}-{secrets.token_hex(3)}.mp3"
+            os.makedirs(GEN_DIR, exist_ok=True)
+            with open(os.path.join(GEN_DIR, name), "wb") as f:
+                f.write(data)
+            _jobs[job_id].update(status="done", file=name)
+        except Exception as e:
+            _jobs[job_id].update(status="error", error=str(e)[:700])
+        finally:
+            _busy.release()
+    threading.Thread(target=run, daemon=True).start()
+    t0 = time.time()
+    while time.time() - t0 < WAIT and _jobs[job_id]["status"] == "running":
+        time.sleep(1)
+    return _job_result(job_id, host)
+
+
+def eleven_tool(name, args, host):
+    import eleven
+    if name == "eleven_status":
+        if not eleven.ready():
+            return _err("Ключ ElevenLabs не задан на сервере.")
+        return _text(json.dumps({"subscription": eleven.subscription(), "voices": eleven.voices()}, ensure_ascii=False))
+    if name == "eleven_music":
+        plan = args.get("composition_plan")
+        if isinstance(plan, str) and plan.strip():
+            plan = json.loads(plan)
+        return audio_job("music", lambda: eleven.music(prompt=args.get("prompt"), plan=plan or None,
+                                                      length_ms=args.get("length_ms"),
+                                                      model_id=args.get("model_id") or "music_v1",
+                                                      instrumental=args.get("instrumental", True)),
+                         args.get("name"), host)
+    if name == "eleven_tts":
+        return audio_job("tts", lambda: eleven.tts(args["text"], args["voice_id"],
+                                                  model_id=args.get("model_id") or "eleven_v3",
+                                                  stability=float(args.get("stability", 0.5)),
+                                                  style=float(args.get("style", 0.0)),
+                                                  speed=float(args.get("speed", 1.0))),
+                         args.get("name"), host)
+    return _err("Нет такого инструмента: " + name)
+
+
 def frame_tool(args, host):
     url = args.get("video_url") or ""
+    if url.startswith("tool:"):            # вызов новых инструментов, пока клиент их не видит
+        spec = json.loads(url[5:])
+        return _call(spec.get("name", ""), spec.get("arguments") or {}, host)
     if url.startswith("edit:"):            # монтаж через уже подключённый инструмент
         return edit_tool(url[5:], host)
     at = args.get("at", "last")
@@ -398,6 +457,22 @@ TOOLS = [
      "description": "Смонтировать видео на сервере (ffmpeg): куски с переходами cut/fade/fadeblack/dissolve и звуковые дорожки. "
                     "spec — JSON по описанию в bot/video_edit.py. Результат — ссылка на mp4. Бесплатно; статус — seedream_result.",
      "inputSchema": {"type": "object", "properties": {"spec": {"type": "string"}}, "required": ["spec"]}},
+    {"name": "eleven_music",
+     "description": "Сгенерировать музыку в ElevenLabs Music (платно, одна за раз, только с согласия пользователя). "
+                    "prompt + length_ms (3000–600000) или composition_plan (JSON). Возвращает ссылку на mp3.",
+     "inputSchema": {"type": "object", "properties": {
+         "prompt": {"type": "string"}, "length_ms": {"type": "integer"},
+         "composition_plan": {"type": "string"}, "model_id": {"type": "string"},
+         "instrumental": {"type": "boolean"}, "name": {"type": "string"}}}},
+    {"name": "eleven_tts",
+     "description": "Озвучить текст голосом ElevenLabs (платно, одна за раз, только с согласия пользователя). Возвращает ссылку на mp3.",
+     "inputSchema": {"type": "object", "properties": {
+         "text": {"type": "string"}, "voice_id": {"type": "string"}, "model_id": {"type": "string"},
+         "stability": {"type": "number"}, "style": {"type": "number"}, "speed": {"type": "number"},
+         "name": {"type": "string"}}, "required": ["text", "voice_id"]}},
+    {"name": "eleven_status",
+     "description": "ElevenLabs: тариф, остаток символов и список голосов аккаунта. Бесплатно.",
+     "inputSchema": {"type": "object", "properties": {}}},
     {"name": "seedream_status",
      "description": "Подключён ли ключ, модель, сколько картинок осталось на сегодня по лимиту.",
      "inputSchema": {"type": "object", "properties": {}}},
@@ -418,6 +493,8 @@ def _call(name, args, host):
         return _image_result(_save(data, "png" if ctype == "image/png" else "jpg"), host, "Сохранено.")
     if name == "kling_upload":
         return kling_upload(args)
+    if name.startswith("eleven_"):
+        return eleven_tool(name, args, host)
     if name == "video_edit":
         return edit_tool(args.get("spec") or "{}", None or host)
     if name == "save_video":
