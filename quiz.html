@@ -287,7 +287,7 @@ function answersText(){
   const d = A.details || {};
   const rows = [
     ["Для кого", val("who")], ["Возраст", val("age")], ["Повод", val("occasion")], ["Любит", val("loves")], ["Мир", val("world")],
-    ["Настроение", val("mood")], ["Кто ещё", val("cast")], ["Рассказчик", val("voice")], ["Имя и прозвище", d.kid], ["Любимая игрушка", d.toy],
+    ["Настроение", val("mood")], ["Кто ещё", val("cast")], ["Рассказчик", val("voice")], ["Длина", val("length")], ["Имя и прозвище", d.kid], ["Любимая игрушка", d.toy],
     ["Словечки", d.words], ["Случай из жизни", d.story], ["Семейный ритуал", d.ritual], ["Чего избегать", d.avoid]
   ].filter(r => r[1]);
   return rows.map(r => "• " + r[0] + ": " + r[1]).join("\n");
