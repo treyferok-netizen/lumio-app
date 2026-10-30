@@ -376,6 +376,33 @@ def save_video(args, host):
     return _text(f"Сохранено: {_url(name, host)} ({len(data) // 1024 // 1024} МБ)")
 
 
+def send_telegram(args):
+    """Отправить файл с сервера администратору в Telegram через бота Lumio (до 50 МБ)."""
+    import index
+    if not index.ADMIN:
+        return _err("ADMIN_CHAT_ID не задан на сервере.")
+    src = args.get("file", "")
+    name = src.rsplit("/files/", 1)[-1].split("?")[0]
+    p = file_path(name)
+    if not p:
+        return _err("Нет такого файла на сервере: " + name)
+    size = os.path.getsize(p)
+    if size > 49 * 1024 * 1024:
+        return _err(f"Файл {size // 1024 // 1024} МБ — больше лимита Telegram-бота (50 МБ).")
+    caption = (args.get("caption") or "")[:1000]
+    with open(p, "rb") as f:
+        if p.endswith(".mp4"):
+            r = index.tg("sendVideo", {"chat_id": index.ADMIN, "caption": caption, "supports_streaming": "true",
+                                       "width": "1920", "height": "1080"},
+                         files={"video": (name, f, "video/mp4")}, timeout=(10, 600))
+        else:
+            r = index.tg("sendDocument", {"chat_id": index.ADMIN, "caption": caption},
+                         files={"document": (name, f)}, timeout=(10, 600))
+    if not r.get("ok"):
+        return _err("Telegram: " + str(r.get("description") or r.get("error"))[:400])
+    return _text(f"Отправлено в Telegram ({size // 1024 // 1024} МБ).")
+
+
 def server_update():
     import subprocess
     repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -475,6 +502,10 @@ TOOLS = [
     {"name": "eleven_status",
      "description": "ElevenLabs: тариф, остаток символов и список голосов аккаунта. Бесплатно.",
      "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "send_telegram",
+     "description": "Отправить файл с сервера (видео/картинку/звук) владельцу студии в Telegram через бота Lumio. Бесплатно.",
+     "inputSchema": {"type": "object", "properties": {"file": {"type": "string"}, "caption": {"type": "string"}},
+                     "required": ["file"]}},
     {"name": "seedream_status",
      "description": "Подключён ли ключ, модель, сколько картинок осталось на сегодня по лимиту.",
      "inputSchema": {"type": "object", "properties": {}}},
@@ -502,6 +533,8 @@ def _call(name, args, host):
         return edit_tool(args.get("spec") or "{}", None or host)
     if name == "save_video":
         return save_video(args, host)
+    if name == "send_telegram":
+        return send_telegram(args)
     if name == "server_update":
         return server_update()
     if name == "seedream_status":
