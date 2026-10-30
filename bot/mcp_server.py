@@ -403,6 +403,38 @@ def send_telegram(args):
     return _text(f"Отправлено в Telegram ({size // 1024 // 1024} МБ).")
 
 
+def audio_levels(args):
+    """Громкость звука файла с сервера по отрезкам (дБ RMS) — чтобы находить провалы и тишину."""
+    import subprocess
+    import numpy as np
+    import video_edit
+    src = args.get("file", "")
+    name = src.rsplit("/files/", 1)[-1].split("?")[0]
+    p = file_path(name)
+    if not p:
+        return _err("Нет такого файла на сервере: " + name)
+    step = max(0.1, float(args.get("step") or 1.0))
+    t0 = float(args.get("start") or 0)
+    t1 = args.get("end")
+    cmd = [video_edit.ffmpeg_exe(), "-v", "error", "-ss", str(t0)]
+    if t1 is not None:
+        cmd += ["-t", str(float(t1) - t0)]
+    cmd += ["-i", p, "-vn", "-ac", "1", "-ar", "8000", "-f", "s16le", "-"]
+    r = subprocess.run(cmd, capture_output=True, timeout=300)
+    if r.returncode != 0:
+        return _err("ffmpeg: " + r.stderr.decode(errors="ignore")[-400:])
+    a = np.frombuffer(r.stdout, dtype=np.int16).astype(np.float32) / 32768
+    n = int(8000 * step)
+    rows = []
+    for i in range(0, len(a), n):
+        seg = a[i:i + n]
+        if len(seg) == 0:
+            break
+        db = 20 * np.log10(np.sqrt(np.mean(seg ** 2)) + 1e-9)
+        rows.append(f"{t0 + i / 8000:7.1f}s {db:6.1f} dB")
+    return _text(f"Длина звука: {len(a) / 8000:.1f} с\n" + "\n".join(rows))
+
+
 def server_update():
     import subprocess
     repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -506,6 +538,12 @@ TOOLS = [
      "description": "Отправить файл с сервера (видео/картинку/звук) владельцу студии в Telegram через бота Lumio. Бесплатно.",
      "inputSchema": {"type": "object", "properties": {"file": {"type": "string"}, "caption": {"type": "string"}},
                      "required": ["file"]}},
+    {"name": "audio_levels",
+     "description": "Громкость звука файла на сервере по отрезкам (дБ) — найти тишину и провалы. Бесплатно.",
+     "inputSchema": {"type": "object", "properties": {
+         "file": {"type": "string"}, "start": {"type": "number"}, "end": {"type": "number"},
+         "step": {"type": "number", "description": "шаг в секундах, по умолчанию 1"}},
+         "required": ["file"]}},
     {"name": "seedream_status",
      "description": "Подключён ли ключ, модель, сколько картинок осталось на сегодня по лимиту.",
      "inputSchema": {"type": "object", "properties": {}}},
@@ -537,6 +575,8 @@ def _call(name, args, host):
         return send_telegram(args)
     if name == "server_update":
         return server_update()
+    if name == "audio_levels":
+        return audio_levels(args)
     if name == "seedream_status":
         return _text(json.dumps({"key": bool(seedream.KEY), "model": seedream.MODEL, "base": seedream.BASE,
                                  "left_today": seedream.left_today(), "daily_limit": seedream.DAILY,
