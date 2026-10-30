@@ -577,6 +577,10 @@ def _call(name, args, host):
         return server_update()
     if name == "audio_levels":
         return audio_levels(args)
+    if name == "quiz_idea":  # проверка нейросети квиза (YandexGPT), ~0,1 ₽ за вызов
+        import index
+        res = index.gen_idea(args.get("answers", ""), "mcp")
+        return _text(json.dumps(res, ensure_ascii=False) if res else "Нет ответа: YandexGPT не настроен (FOLDER_ID / YANDEX_API_KEY) или ошибка.")
     if name == "seedream_status":
         return _text(json.dumps({"key": bool(seedream.KEY), "model": seedream.MODEL, "base": seedream.BASE,
                                  "left_today": seedream.left_today(), "daily_limit": seedream.DAILY,

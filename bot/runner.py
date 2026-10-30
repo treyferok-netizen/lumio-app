@@ -66,6 +66,8 @@ class Web(BaseHTTPRequestHandler):
             qs["src"] = "order"
         elif path.rstrip("/").endswith("/check"):
             qs["src"] = "check"
+        elif path.rstrip("/").endswith("/idea"):
+            qs["src"] = "idea"
         n = int(self.headers.get("Content-Length") or 0)
         if n > MAX_BODY:
             return None
@@ -97,7 +99,7 @@ class Web(BaseHTTPRequestHandler):
         ev = self._event("POST")
         if ev is None:
             return self._send(index.respond(413, {"ok": False, "error": "too large"}))
-        if ev["queryStringParameters"].get("src") not in ("order", "check"):
+        if ev["queryStringParameters"].get("src") not in ("order", "check", "idea"):
             return self._send(index.respond(404, {"ok": False}))
         self._send(index.handler(ev, CTX))
 

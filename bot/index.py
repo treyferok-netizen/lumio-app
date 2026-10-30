@@ -288,6 +288,59 @@ def ask_gpt(question, context):
     return (text or None), need or not text
 
 
+# ---------------------------------------------------------------- квиз: идея мультфильма от нейросети
+IDEA_MODEL = os.environ.get("IDEA_MODEL", "yandexgpt/latest")
+IDEA_SYSTEM = """Ты — сценарист студии персональных мультфильмов Lumio. Родитель прошёл квиз о ребёнке.
+По его ответам придумай идею мультфильма на 30–60 секунд, где главный герой — этот ребёнок.
+
+Правила:
+- Используй живые детали из ответов: имя, игрушку, словечки, случай из жизни, семейный ритуал. Чем конкретнее, тем лучше.
+- Одна простая цель, одна смешная мультяшная неудача (плюхнулся, застрял, перепутал), герой справляется сам или с близкими, тёплый финал дома.
+- Без злодеев, страшного, травм и слёз. Подходит для просмотра перед сном.
+- Только свои персонажи. Нельзя: Маша и Медведь, Смешарики, Фиксики, Синий трактор, Тачки, Молния Маккуин, Элли, Страшила, Тотошка, Disney, Pixar, Marvel, любые известные мультгерои и бренды.
+- Учитывай возраст героя и выбранное настроение.
+- Не упоминай цены, сроки, огонёк и студию.
+- Пиши тепло и просто, обращаясь к родителю, без пафоса и общих слов.
+
+Ответ строго в формате:
+Название: <2–5 слов>
+Идея: <3–4 предложения, до 450 знаков>"""
+_idea_hits = {}
+
+
+def gen_idea(answers, ip="", context=None):
+    """Возвращает {"title", "idea"} или None."""
+    now = time.time()
+    hits = [t for t in _idea_hits.get(ip, []) if now - t < 3600]
+    if len(hits) >= 15:  # защита от злоупотреблений: 15 идей в час с одного адреса
+        return None
+    _idea_hits[ip] = hits + [now]
+    auth = iam_headers(context)
+    if not FOLDER or not auth:
+        return None
+    body = {
+        "modelUri": f"gpt://{FOLDER}/{IDEA_MODEL}",
+        "completionOptions": {"stream": False, "temperature": 0.7, "maxTokens": "400"},
+        "messages": [{"role": "system", "text": IDEA_SYSTEM},
+                     {"role": "user", "text": "Ответы родителя:\n" + str(answers)[:2500]}],
+    }
+    try:
+        r = requests.post("https://llm.api.cloud.yandex.net/foundationModels/v1/completion",
+                          json=body, headers={**auth, "x-folder-id": FOLDER}, timeout=(5, 25))
+        r.raise_for_status()
+        text = r.json()["result"]["alternatives"][0]["message"]["text"].strip()
+    except Exception as e:
+        print("idea error", e)
+        return None
+    m_t = re.search(r"Название:\s*(.+)", text)
+    m_i = re.search(r"Идея:\s*([\s\S]+)", text)
+    idea = (m_i.group(1) if m_i else text).strip().strip("*").strip()
+    title = (m_t.group(1) if m_t else "").strip().strip("*«»\"").strip()
+    if not idea:
+        return None
+    return {"title": title[:80], "idea": idea[:700]}
+
+
 # ---------------------------------------------------------------- telegram updates
 GREETING = ("Привет! Вы в <b>Lumio</b> ✨ — студии мультфильмов по вашим историям.\n\n"
             "Рисуем вашу семью мультяшными героями по фото и снимаем про вас настоящий мультфильм: "
@@ -895,6 +948,15 @@ def handler(event, context):
         u = check_init_data(init)
         sub = is_subscribed(u.get("id")) if u and u.get("id") else None
         return respond(200, {"ok": True, "subscribed": sub, "channel": CHANNEL_URL})
+
+    if src == "idea" and method == "POST":  # квиз: идея мультфильма по ответам
+        try:
+            answers = json.loads(body or b"{}").get("answers", "")
+        except ValueError:
+            answers = ""
+        ip = headers.get("x-forwarded-for", "").split(",")[0].strip() or headers.get("x-real-ip", "")
+        res = gen_idea(answers, ip, context) if answers else None
+        return respond(200, {"ok": bool(res), **(res or {})})
 
     if src == "order" and method == "POST":
         ctype = headers.get("content-type", "")
