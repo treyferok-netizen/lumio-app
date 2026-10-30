@@ -8,6 +8,7 @@ All business logic lives in index.py; this file only feeds it events.
 """
 import base64
 import json
+import os
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -115,7 +116,8 @@ class Web(BaseHTTPRequestHandler):
                 return self._raw(404, b'{"error":"not found"}')
             with open(fp, "rb") as f:
                 data = f.read()
-            ctype = "video/mp4" if fp.endswith(".mp4") else "image/png" if fp.endswith(".png") else "image/jpeg"
+            ctype = {".mp4": "video/mp4", ".png": "image/png", ".mp3": "audio/mpeg", ".wav": "audio/wav",
+                     ".m4a": "audio/mp4"}.get(os.path.splitext(fp)[1], "image/jpeg")
             return self._raw(200, data, ctype)
         ev = self._event("GET")
         src = (ev or {}).get("queryStringParameters", {}).get("src")

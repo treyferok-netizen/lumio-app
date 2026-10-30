@@ -14,6 +14,7 @@
 import base64
 import hmac
 import json
+import re
 import os
 import secrets
 import tempfile
@@ -55,7 +56,7 @@ def _save(data, ext="jpg"):
 
 def file_path(name):
     """Путь к файлу для GET /files/<name> (только наши имена, без ../)."""
-    if not name or "/" in name or "\\" in name or name.startswith(".") or not name.endswith((".jpg", ".png", ".mp4")):
+    if not name or "/" in name or "\\" in name or name.startswith(".") or not name.endswith((".jpg", ".png", ".mp4", ".mp3", ".wav", ".m4a")):
         return None
     p = os.path.join(GEN_DIR, name)
     return p if os.path.isfile(p) else None
@@ -169,7 +170,9 @@ def _job_result(job_id, host):
     if job["status"] == "running":
         return _text(f"Ещё генерируется ({int(time.time() - job['ts'])} с). Проверьте позже: seedream_result job_id={job_id}")
     if job["status"] == "error":
-        return _err("Seedream ответил ошибкой: " + job["error"])
+        return _err(("Монтаж: " if job.get("kind") == "edit" else "Seedream ответил ошибкой: ") + job["error"])
+    if job.get("kind") == "edit":
+        return _text(f"Монтаж готов: {_url(job['file'], host)} ({job['duration']:.1f} с). job_id={job_id}")
     return _image_result(job["file"], host, f"Готово. job_id={job_id}. Осталось сегодня: {seedream.left_today()}")
 
 
@@ -196,8 +199,53 @@ def gen_tool(args, host):
     return _job_result(job_id, host)
 
 
+def edit_tool(spec, host):
+    import video_edit
+    if isinstance(spec, str):
+        spec = json.loads(spec)
+    if video_edit._lock.locked():
+        return _err("Уже идёт монтаж — дождитесь результата.")
+    job_id = "e" + secrets.token_hex(5)
+    _jobs[job_id] = {"status": "running", "ts": time.time(), "prompt": "edit", "kind": "edit"}
+    tmpdir = tempfile.mkdtemp(prefix="edit-")
+
+    def resolve(src):
+        name = src.rsplit("/files/", 1)[-1] if "/files/" in src else src
+        p = file_path(name) if "/" not in name else None
+        if p:
+            return p
+        if src.startswith("http"):
+            data, _ = _fetch(src, limit=400 * 1024 * 1024)
+            local = os.path.join(tmpdir, secrets.token_hex(4) + os.path.splitext(src.split("?")[0])[1])
+            with open(local, "wb") as f:
+                f.write(data)
+            return local
+        raise RuntimeError("нет файла: " + src)
+
+    def run():
+        with video_edit._lock:
+            try:
+                base = re.sub(r"[^a-zA-Z0-9_-]", "", spec.get("name") or "") or "edit"
+                name = f"{base}-{secrets.token_hex(3)}.mp4"
+                total = video_edit.build(spec, resolve, os.path.join(GEN_DIR, name),
+                                         log=lambda m: print(m, flush=True))
+                _jobs[job_id].update(status="done", file=name, duration=total)
+            except Exception as e:
+                _jobs[job_id].update(status="error", error=str(e)[:700])
+            finally:
+                import shutil
+                shutil.rmtree(tmpdir, ignore_errors=True)
+    threading.Thread(target=run, daemon=True).start()
+    t0 = time.time()
+    while time.time() - t0 < WAIT and _jobs[job_id]["status"] == "running":
+        time.sleep(1)
+    return _job_result(job_id, host)
+
+
 def frame_tool(args, host):
     url = args.get("video_url") or ""
+    if url.startswith("edit:"):            # монтаж через уже подключённый инструмент
+        return edit_tool(url[5:], host)
     at = args.get("at", "last")
     if not url.startswith("http"):
         return _err("Нужен video_url (http/https).")
@@ -346,6 +394,10 @@ TOOLS = [
          "url": {"type": "string"},
          "name": {"type": "string", "description": "имя файла латиницей, напр. ogonek_s1 (без расширения)"}},
          "required": ["url"]}},
+    {"name": "video_edit",
+     "description": "Смонтировать видео на сервере (ffmpeg): куски с переходами cut/fade/fadeblack/dissolve и звуковые дорожки. "
+                    "spec — JSON по описанию в bot/video_edit.py. Результат — ссылка на mp4. Бесплатно; статус — seedream_result.",
+     "inputSchema": {"type": "object", "properties": {"spec": {"type": "string"}}, "required": ["spec"]}},
     {"name": "seedream_status",
      "description": "Подключён ли ключ, модель, сколько картинок осталось на сегодня по лимиту.",
      "inputSchema": {"type": "object", "properties": {}}},
@@ -366,6 +418,8 @@ def _call(name, args, host):
         return _image_result(_save(data, "png" if ctype == "image/png" else "jpg"), host, "Сохранено.")
     if name == "kling_upload":
         return kling_upload(args)
+    if name == "video_edit":
+        return edit_tool(args.get("spec") or "{}", None or host)
     if name == "save_video":
         return save_video(args, host)
     if name == "server_update":
