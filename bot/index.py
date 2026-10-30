@@ -49,6 +49,7 @@ CHANNEL_URL = "https://t.me/" + CHANNEL.lstrip("@")
 API = f"https://api.telegram.org/bot{BOT_TOKEN}/"
 HERE = os.path.dirname(os.path.abspath(__file__))
 HANDOFF = "[ПЕРЕДАТЬ]"
+QUIZ_URL = os.environ.get("QUIZ_URL", "https://treyferok-netizen.github.io/lumio-app/quiz.html?src=bot")
 TAG_RE = re.compile(r"#c(-?\d+)")
 
 CORS = {
@@ -600,6 +601,15 @@ def handle_client(msg, context):
         return
     if text.startswith("/start"):
         crm.log_event("start", user.get("id"))
+    # короткая ссылка на квиз: t.me/LumioMultBot?start=quiz (без обязательной подписки — это вход в воронку)
+    if text.startswith("/start quiz") or text.startswith("/quiz"):
+        send(chat_id, "🎬 <b>Какой мультфильм подойдёт вашему ребёнку?</b>\n\n"
+                      "10 коротких вопросов — около 2 минут. В конце сказочник Lumio придумает историю, "
+                      "где главный герой ваш ребёнок.",
+             reply_markup={"inline_keyboard": [[{"text": "✨ Пройти квиз", "url": QUIZ_URL}]]})
+        if ADMIN and text.startswith("/start"):
+            send(ADMIN, f"👋 Новый человек в боте (квиз): {who(user)} {tag}")
+        return
     # обязательная подписка (кроме клиентов, с которыми уже общается менеджер)
     if not (ADMIN and human_mode(chat_id)) and is_subscribed(user.get("id")) is False:
         if text.startswith("/start") and ADMIN:
