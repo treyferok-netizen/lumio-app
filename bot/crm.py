@@ -92,11 +92,15 @@ def open_orders():
     return [r for r in _load() if r["status"] in OPEN]
 
 
-def log_event(kind, uid):
+def log_event(kind, uid, src=None):
+    """kind: start / gate / sub / app (открыл Mini App) / msg (написал в бот). src — метка ссылки (ad001)."""
+    ev = {"ts": time.time(), "e": kind, "uid": uid}
+    if src:
+        ev["src"] = src
     try:
         os.makedirs(DIR, exist_ok=True)
         with _lock, open(EVENTS, "a", encoding="utf-8") as f:
-            f.write(json.dumps({"ts": time.time(), "e": kind, "uid": uid}) + "\n")
+            f.write(json.dumps(ev) + "\n")
     except OSError as e:
         print("event log error", e)
 

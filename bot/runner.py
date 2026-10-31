@@ -11,12 +11,18 @@ import json
 import os
 import threading
 import time
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import ads
 import index
 import mcp_server
 
 MAX_BODY = 12 * 1024 * 1024
+DENIED = ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'>"
+          "<body style='font:16px system-ui;padding:40px;max-width:520px;margin:auto'>"
+          "<h2>Кабинет рекламы Lumio</h2><p>Ссылка для входа устарела или неверная. "
+          "Попросите новую: команда <b>/cabinet</b> в боте Lumio.</p>").encode()
 
 
 class Ctx:  # no Yandex service-account token here; index uses YANDEX_API_KEY instead
@@ -86,8 +92,70 @@ class Web(BaseHTTPRequestHandler):
         if body:
             self.wfile.write(body)
 
+    # ------------------------------------------------ кабинет рекламы (/cabinet)
+    def _cab_ok(self):
+        for part in (self.headers.get("Cookie") or "").split(";"):
+            k, _, v = part.strip().partition("=")
+            if k == "lc" and ads.check(v):
+                return True
+        return False
+
+    def _cabinet(self, method):
+        path, _, query = self.path.partition("?")
+        qs = dict(urllib.parse.parse_qsl(query))
+        if path.rstrip("/") == "/cabinet" and method == "GET":
+            if qs.get("k"):
+                if not ads.check(qs["k"]):
+                    return self._raw(403, DENIED, "text/html; charset=utf-8")
+                self.send_response(302)
+                self.send_header("Set-Cookie", f"lc={qs['k']}; Path=/cabinet; Max-Age=31536000; HttpOnly; Secure; SameSite=Lax")
+                self.send_header("Location", "/cabinet")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            if not self._cab_ok():
+                return self._raw(403, DENIED, "text/html; charset=utf-8")
+            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "cabinet.html"), "rb") as f:
+                return self._raw(200, f.read(), "text/html; charset=utf-8")
+        if not self._cab_ok():
+            return self._raw(403, b'{"ok":false,"error":"auth"}')
+        dfrom, dto = qs.get("from") or None, qs.get("to") or None
+        js = lambda o: self._raw(200, json.dumps(o, ensure_ascii=False).encode(), "application/json; charset=utf-8")  # noqa: E731
+
+        def csvf(name, data):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/csv; charset=utf-8")
+            self.send_header("Content-Disposition", f'attachment; filename="{name}"')
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        try:
+            if method == "GET" and path == "/cabinet/api/report":
+                return js(ads.report(dfrom, dto))
+            if method == "GET" and path == "/cabinet/api/people":
+                return js({"ok": True, "people": ads.people(qs.get("code", ""), dfrom, dto)})
+            if method == "GET" and path == "/cabinet/links.csv":
+                return csvf("lumio_reklama_ssylki.csv", ads.links_csv())
+            if method == "GET" and path == "/cabinet/report.csv":
+                return csvf("lumio_reklama_otchet.csv", ads.report_csv(dfrom, dto))
+            if method == "POST" and path in ("/cabinet/api/link", "/cabinet/api/add"):
+                if "json" not in (self.headers.get("Content-Type") or ""):
+                    return self._raw(415)
+                n = int(self.headers.get("Content-Length") or 0)
+                data = json.loads(self.rfile.read(min(n, 65536)) or b"{}")
+                if path.endswith("/add"):
+                    ads.add_links(data.get("n", 10))
+                    return js({"ok": True})
+                row = ads.update_link(str(data.get("code", "")), data)
+                return js({"ok": bool(row), "row": row})
+        except (ValueError, KeyError) as e:
+            return self._raw(400, json.dumps({"ok": False, "error": str(e)}).encode())
+        return self._raw(404, b'{"error":"not found"}')
+
     def do_POST(self):
         path = self.path.partition("?")[0]
+        if path.startswith("/cabinet"):
+            return self._cabinet("POST")
         if path.startswith("/mcp/"):
             if not mcp_server.path_ok(path):
                 return self._raw(404, b'{"error":"not found"}')
@@ -108,6 +176,8 @@ class Web(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.partition("?")[0]
+        if path.startswith("/cabinet"):
+            return self._cabinet("GET")
         if path.startswith("/.well-known/"):
             return self._raw(404, b'{"error":"not found"}')
         if path.startswith("/mcp/"):

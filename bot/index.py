@@ -31,6 +31,7 @@ from email.policy import default as email_policy
 
 import requests
 
+import ads
 import crm
 import seedream
 
@@ -393,6 +394,8 @@ def setup_profile():
                 {"command": "orders", "description": "Открытые заявки"},
                 {"command": "stats", "description": "Воронка за 30 дней"},
                 {"command": "export", "description": "Все заявки таблицей"},
+                {"command": "cabinet", "description": "Кабинет рекламы: ссылка для менеджера"},
+                {"command": "links", "description": "100 рекламных ссылок таблицей"},
                 {"command": "active", "description": "С кем я сейчас на связи"},
                 {"command": "help", "description": "Подсказка"}]}) if ADMIN.lstrip("-").isdigit() else {}}
 
@@ -615,8 +618,21 @@ def handle_client(msg, context):
     if text.startswith("/myid"):
         send(chat_id, f"Ваш chat id: <code>{chat_id}</code>")
         return
+    via = ""
     if text.startswith("/start"):
-        crm.log_event("start", user.get("id"))
+        code = text.split(maxsplit=1)[1].strip() if " " in text else ""
+        code = code if ads.is_ad(code) else ""
+        crm.log_event("start", user.get("id"), code or None)
+        try:
+            ads.touch(user, code)
+        except Exception as e:
+            print("ads touch error", repr(e))
+        if code:
+            nm = ads.links().get(code, {}).get("name")
+            via = f"\n📣 Реклама: {code}" + (f" — {esc(nm)}" if nm else "")
+            text = "/start"   # дальше рекламный переход ведём как обычный /start
+    elif text and not text.startswith("/"):
+        crm.log_event("msg", user.get("id"))
     # короткая ссылка на квиз: t.me/LumioMultBot?start=quiz (без обязательной подписки — это вход в воронку)
     if text.startswith("/start quiz") or text.startswith("/quiz"):
         send(chat_id, "🎬 <b>Какой мультфильм подойдёт вашему ребёнку?</b>\n\n"
@@ -632,7 +648,7 @@ def handle_client(msg, context):
     # обязательная подписка (кроме клиентов, с которыми уже общается менеджер)
     if not (ADMIN and human_mode(chat_id)) and is_subscribed(user.get("id")) is False:
         if text.startswith("/start") and ADMIN:
-            send(ADMIN, f"👋 Новый человек в боте (ещё не подписан на канал): {who(user)} {tag}")
+            send(ADMIN, f"👋 Новый человек в боте (ещё не подписан на канал): {who(user)} {tag}{via}")
         crm.log_event("gate", user.get("id"))
         gate(chat_id, text)
         return
@@ -648,7 +664,7 @@ def handle_client(msg, context):
     if text.startswith("/start"):
         send(chat_id, GREETING, reply_markup=greeting_markup())
         if ADMIN:
-            send(ADMIN, f"👋 Новый человек в боте: {who(user)} {tag}")
+            send(ADMIN, f"👋 Новый человек в боте: {who(user)} {tag}{via}")
         return
 
     wad = msg.get("web_app_data")
@@ -936,6 +952,20 @@ def admin_crm(text):
                     f"💳 Оплатили: {s['paid']}{pct(s['paid'], s['orders'])}\n"
                     f"✅ Сдано: {s['done']}\n❌ Отказ: {s['lost']}\n⏳ В работе сейчас: {s['open']}")
         return True
+    if low.startswith("/cabinet"):
+        if low.startswith("/cabinet_new"):
+            ads.key(rotate=True)
+            send(ADMIN, "🔒 Старая ссылка на кабинет больше не работает.")
+        ads.links()
+        send(ADMIN, "📊 <b>Кабинет рекламы Lumio</b>\n\nСсылка для менеджера (по ней входят без пароля, "
+                    "не публикуйте её):\n" + ads.cabinet_url() +
+             "\n\nЕсли ссылка ушла не тому человеку — /cabinet_new, и старая перестанет работать.",
+             disable_web_page_preview=True)
+        return True
+    if low.startswith("/links"):
+        tg("sendDocument", {"chat_id": ADMIN, "caption": "Рекламные ссылки Lumio (открывается в Excel)"},
+           files={"document": ("lumio_reklama_ssylki.csv", ads.links_csv(), "text/csv")})
+        return True
     if low.startswith("/export"):
         tg("sendDocument", {"chat_id": ADMIN, "caption": "Все заявки Lumio (открывается в Excel)"},
            files={"document": (f"lumio_zayavki_{time.strftime('%Y-%m-%d')}.csv", crm.export_csv(), "text/csv")})
@@ -990,6 +1020,8 @@ def handler(event, context):
             init = ""
         u = check_init_data(init)
         sub = is_subscribed(u.get("id")) if u and u.get("id") else None
+        if u and u.get("id"):
+            crm.log_event("app", u["id"])
         return respond(200, {"ok": True, "subscribed": sub, "channel": CHANNEL_URL})
 
     if src == "idea" and method == "POST":  # квиз: идея мультфильма по ответам

@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Реклама Lumio</title>
+<style>
+:root{
+  --bg:#f6f4ef;--card:#fff;--ink:#1d1b18;--muted:#6f6a61;--line:#e6e1d7;--soft:#f0ece4;
+  --accent:#5b4bdb;--accent-soft:#ece9ff;--good:#1f8a5b;--bar:#5b4bdb;--bar2:#f2a33a;--bar3:#1f8a5b;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#141312;--card:#1d1c1a;--ink:#f1eee8;--muted:#a39d92;--line:#2f2d29;--soft:#262421;
+  --accent:#9d92ff;--accent-soft:#2b2747;--good:#4cc28c;--bar:#8f83ff;--bar2:#f2b45c;--bar3:#4cc28c;}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1280px;margin:0 auto;padding:20px 16px 60px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:16px}
+h1{font-size:22px;margin:0;letter-spacing:-.01em}
+.sub{color:var(--muted);font-size:13px}
+.periods{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.chip{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:6px 12px;font:inherit;cursor:pointer}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+input[type=date]{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:5px 8px;font:inherit}
+.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px}
+@media (max-width:760px){.kpis{grid-template-columns:repeat(2,1fr)}}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.kpi b{display:block;font-size:24px;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.kpi span{color:var(--muted);font-size:12px}
+.kpi em{font-style:normal;color:var(--good);font-size:12px;margin-left:4px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:14px}
+.card h2{font-size:15px;margin:0 0 10px}
+.legend{display:flex;gap:14px;color:var(--muted);font-size:12px;margin-bottom:6px;flex-wrap:wrap}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+#chart{width:100%;height:180px;display:block}
+.tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+.tools input[type=search],.tools select{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:7px 10px;font:inherit;min-width:0}
+.tools input[type=search]{flex:1 1 200px}
+.btn{border:1px solid var(--line);background:var(--soft);color:var(--ink);border-radius:8px;padding:7px 12px;font:inherit;cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn:hover{border-color:var(--accent)}
+label.tg{display:flex;gap:6px;align-items:center;color:var(--muted);white-space:nowrap}
+.tbl{overflow:auto;border:1px solid var(--line);border-radius:10px;max-height:70vh}
+table{border-collapse:collapse;width:100%;min-width:1100px;font-variant-numeric:tabular-nums}
+th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th{position:sticky;top:0;background:var(--soft);font-weight:600;font-size:12px;color:var(--muted);cursor:pointer;user-select:none;z-index:1}
+th.l,td.l{text-align:left}
+th.s::after{content:" ↓"}th.s.asc::after{content:" ↑"}
+tr:hover td{background:var(--soft)}
+td.zero{color:var(--muted)}
+.code{font-family:ui-monospace,Menlo,monospace;color:var(--accent);cursor:pointer;text-decoration:underline dotted}
+td input{width:100%;min-width:170px;border:1px solid transparent;background:transparent;color:var(--ink);border-radius:6px;padding:4px 6px;font:inherit}
+td input::placeholder{color:var(--muted);opacity:.45}
+td input:hover,td input:focus{border-color:var(--line);background:var(--card);outline:none}
+td input.num{min-width:80px;text-align:right}
+.copy{border:0;background:var(--accent-soft);color:var(--accent);border-radius:6px;padding:4px 8px;cursor:pointer;font:inherit;font-size:12px}
+tfoot td{font-weight:700;background:var(--soft);position:sticky;bottom:0}
+.saved{color:var(--good)!important}
+.drawer{position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;z-index:5}
+.drawer.on{display:block}
+.panel{position:absolute;right:0;top:0;bottom:0;width:min(560px,100%);background:var(--card);padding:18px 16px;overflow:auto;box-shadow:-10px 0 30px rgba(0,0,0,.15)}
+.panel h3{margin:0 0 4px;font-size:18px}
+.person{border-bottom:1px solid var(--line);padding:10px 0}
+.tag{display:inline-block;background:var(--soft);border-radius:6px;padding:1px 7px;font-size:12px;margin:2px 4px 0 0;color:var(--muted)}
+.tag.g{background:var(--accent-soft);color:var(--accent)}
+details{color:var(--muted)}
+details p{margin:6px 0}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:999px;opacity:0;transition:.2s;pointer-events:none}
+.toast.on{opacity:1}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Реклама Lumio</h1>
+      <div class="sub">Переходы по рекламным ссылкам в бот <span id="bot">@LumioMultBot</span> и что люди сделали дальше · <span id="upd"></span></div>
+    </div>
+    <div class="periods" id="periods">
+      <button class="chip" data-p="today">Сегодня</button>
+      <button class="chip" data-p="yday">Вчера</button>
+      <button class="chip" data-p="7">7 дней</button>
+      <button class="chip on" data-p="30">30 дней</button>
+      <button class="chip" data-p="all">Всё время</button>
+      <input type="date" id="dfrom" aria-label="С"> — <input type="date" id="dto" aria-label="По">
+    </div>
+  </header>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="card">
+    <h2>По дням</h2>
+    <div class="legend"><span><i style="background:var(--bar)"></i>Переходы</span><span><i style="background:var(--bar2)"></i>Новые люди</span><span><i style="background:var(--bar3)"></i>Заявки</span></div>
+    <svg id="chart" preserveAspectRatio="none"></svg>
+  </div>
+
+  <div class="card">
+    <div class="tools">
+      <input type="search" id="q" placeholder="Поиск: метка, название, кампания">
+      <select id="camp"><option value="">Все кампании</option></select>
+      <label class="tg"><input type="checkbox" id="active"> только с переходами</label>
+      <a class="btn" id="csv" href="/cabinet/report.csv">Отчёт в Excel</a>
+      <a class="btn" href="/cabinet/links.csv">Все ссылки в Excel</a>
+      <button class="btn" id="add">+ 10 ссылок</button>
+    </div>
+    <div class="tbl">
+      <table>
+        <thead><tr id="head"></tr></thead>
+        <tbody id="body"></tbody>
+        <tfoot><tr id="foot"></tr></tfoot>
+      </table>
+    </div>
+  </div>
+
+  <details class="card">
+    <summary><b>Как считаются цифры</b></summary>
+    <p><b>Переходы</b> — сколько разных людей нажали «Запустить» по ссылке за период. Сюда входят и те, кто уже бывал в боте.</p>
+    <p><b>Новые</b> — кто впервые попал в бота именно по этой ссылке. Человек закрепляется за первой рекламной ссылкой, по которой пришёл. Всё, что он делает потом, засчитывается ей.</p>
+    <p><b>Подписались</b> — нажали «Я подписался» после перехода. Те, кто уже был подписан на канал, сюда не попадают.</p>
+    <p><b>Приложение</b> — открыли Mini App. <b>Написали</b> — задали вопрос в чате.</p>
+    <p><b>Заявки, оплатили, сдано</b> — заявки этих людей и их статусы. Статусы менеджер ставит кнопками в боте.</p>
+    <p><b>Расход</b> впишите сами, сколько потрачено на ссылку в Telegram Ads за всё время. Цена за нового человека, заявку и оплату считается по всем данным ссылки, без учёта выбранного периода.</p>
+    <p>Показы и клики внутри Telegram видны только в кабинете Telegram Ads. Здесь видно, что люди сделали после перехода.</p>
+  </details>
+</div>
+
+<div class="drawer" id="drawer"><div class="panel" id="panel"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const COLS = [
+  {k:"code", t:"Метка", l:1},
+  {k:"name", t:"Название", l:1, edit:"text"},
+  {k:"campaign", t:"Кампания", l:1, edit:"text"},
+  {k:"url", t:"Ссылка", l:1},
+  {k:"clicks", t:"Переходы"},
+  {k:"new", t:"Новые"},
+  {k:"sub", t:"Подписались"},
+  {k:"app", t:"Приложение"},
+  {k:"msg", t:"Написали"},
+  {k:"orders", t:"Заявки"},
+  {k:"paid", t:"Оплатили"},
+  {k:"done", t:"Сдано"},
+  {k:"spend", t:"Расход, ₽", edit:"num"},
+  {k:"cpn", t:"₽ / новый"},
+  {k:"cpo", t:"₽ / заявка"},
+  {k:"cpp", t:"₽ / оплата"},
+];
+const NUM = ["clicks","new","sub","app","msg","orders","paid","done"];
+let rep = null, all = null, sort = {k:"code", asc:true}, range = {from:null,to:null};
+const $ = id => document.getElementById(id);
+const fmt = n => (n==null||n==="") ? "—" : Math.round(n).toLocaleString("ru-RU");
+const esc = s => String(s??"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const pct = (a,b) => b ? Math.round(100*a/b)+"%" : "";
+function toast(t){ const e=$("toast"); e.textContent=t; e.classList.add("on"); setTimeout(()=>e.classList.remove("on"),1400); }
+
+// Даты по Владивостоку (UTC+10)
+const TZ = 10;
+function dayStr(offsetDays=0){ const d=new Date(Date.now()+TZ*3600e3-offsetDays*864e5); return d.toISOString().slice(0,10); }
+function setPeriod(p){
+  document.querySelectorAll(".chip").forEach(c=>c.classList.toggle("on", c.dataset.p===p));
+  if(p==="today") range={from:dayStr(0),to:dayStr(0)};
+  else if(p==="yday") range={from:dayStr(1),to:dayStr(1)};
+  else if(p==="all") range={from:null,to:null};
+  else range={from:dayStr(+p-1),to:dayStr(0)};
+  $("dfrom").value=range.from||""; $("dto").value=range.to||"";
+  try{localStorage.setItem("lumio_cab_period",p)}catch(e){}
+  load();
+}
+function qs(){ const p=new URLSearchParams(); if(range.from)p.set("from",range.from); if(range.to)p.set("to",range.to); return p.toString(); }
+
+async function api(path, body){
+  const r = await fetch(path, body ? {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)} : {});
+  if(r.status===403){ location.reload(); throw new Error("auth"); }
+  return r.json();
+}
+async function load(){
+  const q=qs();
+  const [a,b] = await Promise.all([api("/cabinet/api/report?"+q), (range.from||range.to) ? api("/cabinet/api/report") : null]);
+  rep=a; all=b||a;
+  $("csv").href="/cabinet/report.csv?"+q;
+  $("bot").textContent="@"+rep.bot;
+  $("upd").textContent="обновлено "+new Date().toLocaleTimeString("ru-RU",{hour:"2-digit",minute:"2-digit"});
+  const camps=[...new Set(rep.rows.map(r=>r.campaign).filter(Boolean))].sort();
+  const cs=$("camp"), cur=cs.value;
+  cs.innerHTML='<option value="">Все кампании</option>'+camps.map(c=>`<option ${c===cur?"selected":""}>${esc(c)}</option>`).join("");
+  render();
+}
+
+function rows(){
+  const allBy = Object.fromEntries(all.rows.map(r=>[r.code,r]));
+  const q=$("q").value.trim().toLowerCase(), camp=$("camp").value, act=$("active").checked;
+  let rs = rep.rows.map(r=>{
+    const A=allBy[r.code]||r, s=+r.spend||0;
+    return {...r, cpn: s&&A.new ? s/A.new : null, cpo: s&&A.orders ? s/A.orders : null, cpp: s&&A.paid ? s/A.paid : null};
+  }).filter(r=>(!q || (r.code+" "+r.name+" "+r.campaign).toLowerCase().includes(q)) && (!camp||r.campaign===camp) && (!act||r.clicks||r.people));
+  const k=sort.k, d=sort.asc?1:-1;
+  rs.sort((a,b)=>{ const x=a[k]??-1, y=b[k]??-1; return (typeof x==="string" ? x.localeCompare(y,"ru") : x-y)*d || a.code.localeCompare(b.code); });
+  return rs;
+}
+
+function render(){
+  const rs=rows();
+  // KPI
+  const sum=k=>rs.reduce((s,r)=>s+(+r[k]||0),0);
+  const T=Object.fromEntries([...NUM,"spend"].map(k=>[k,sum(k)]));
+  const Aall=all.rows.filter(r=>rs.some(x=>x.code===r.code));
+  const An=Aall.reduce((s,r)=>s+r.new,0), Ao=Aall.reduce((s,r)=>s+r.orders,0), Ap=Aall.reduce((s,r)=>s+r.paid,0);
+  const k=[["Переходы",T.clicks],["Новые люди",T.new,pct(T.new,T.clicks)],["Подписались",T.sub,pct(T.sub,T.new)],
+    ["Открыли приложение",T.app],["Заявки",T.orders,pct(T.orders,T.new)],["Оплатили",T.paid,pct(T.paid,T.orders)],
+    ["Расход, ₽",T.spend],["₽ за нового",T.spend&&An?T.spend/An:null],["₽ за заявку",T.spend&&Ao?T.spend/Ao:null],["₽ за оплату",T.spend&&Ap?T.spend/Ap:null]];
+  $("kpis").innerHTML=k.map(([t,v,p])=>`<div class="kpi"><b>${fmt(v)}</b><span>${t}</span>${p?`<em>${p}</em>`:""}</div>`).join("");
+  // table
+  $("head").innerHTML=COLS.map(c=>`<th class="${c.l?"l":""} ${sort.k===c.k?"s"+(sort.asc?" asc":""):""}" data-k="${c.k}">${c.t}</th>`).join("");
+  $("body").innerHTML=rs.map(r=>"<tr>"+COLS.map(c=>{
+    const v=r[c.k];
+    if(c.k==="code") return `<td class="l"><span class="code" data-code="${r.code}">${r.code}</span></td>`;
+    if(c.k==="url") return `<td class="l"><button class="copy" data-url="${esc(r.url)}">Копировать</button> <span class="sub">${esc(r.url.replace("https://",""))}</span></td>`;
+    if(c.edit==="text") return `<td class="l"><input data-code="${r.code}" data-f="${c.k}" value="${esc(v)}" placeholder="+ ${c.k==="name"?"название":"кампания"}"></td>`;
+    if(c.edit==="num") return `<td><input class="num" inputmode="decimal" data-code="${r.code}" data-f="spend" value="${v||""}" placeholder="0"></td>`;
+    return `<td class="${!v?"zero":""}">${fmt(v)}</td>`;
+  }).join("")+"</tr>").join("");
+  $("foot").innerHTML=COLS.map(c=>{
+    if(c.k==="code") return `<td class="l">Итого</td>`;
+    if(c.k==="name") return `<td class="l">${rs.length} ссылок</td>`;
+    if(["campaign","url"].includes(c.k)) return `<td></td>`;
+    if(c.k==="cpn") return `<td>${fmt(T.spend&&An?T.spend/An:null)}</td>`;
+    if(c.k==="cpo") return `<td>${fmt(T.spend&&Ao?T.spend/Ao:null)}</td>`;
+    if(c.k==="cpp") return `<td>${fmt(T.spend&&Ap?T.spend/Ap:null)}</td>`;
+    return `<td>${fmt(T[c.k])}</td>`;
+  }).join("");
+  chart();
+}
+
+function chart(){
+  const svg=$("chart"), W=svg.clientWidth||800, H=180, pad=22;
+  let days=rep.days;
+  if(range.from&&range.to){ // заполним пустые дни
+    const m=Object.fromEntries(days.map(d=>[d.day,d])); days=[];
+    for(let t=Date.parse(range.from); t<=Date.parse(range.to); t+=864e5){ const s=new Date(t).toISOString().slice(0,10); days.push(m[s]||{day:s,clicks:0,new:0,orders:0}); }
+  }
+  svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
+  if(!days.length){ svg.innerHTML=`<text x="${W/2}" y="${H/2}" text-anchor="middle" fill="currentColor" opacity=".5">Пока нет переходов за этот период</text>`; return; }
+  const max=Math.max(1,...days.map(d=>d.clicks)), n=days.length, bw=Math.min(56,(W-pad)/n), h=v=>(H-pad-6)*v/max;
+  let g="";
+  days.forEach((d,i)=>{
+    const x=pad+i*bw, w=Math.max(2,bw*0.7);
+    g+=`<g><title>${d.day.split("-").reverse().join(".")}: переходы ${d.clicks}, новые ${d.new}, заявки ${d.orders}</title>`+
+       `<rect x="${x}" y="${H-pad-h(d.clicks)}" width="${w}" height="${h(d.clicks)}" rx="2" fill="var(--bar)" opacity=".35"/>`+
+       `<rect x="${x}" y="${H-pad-h(d.new)}" width="${w}" height="${h(d.new)}" rx="2" fill="var(--bar2)"/>`+
+       (d.orders?`<circle cx="${x+w/2}" cy="${H-pad-h(d.orders)-4}" r="3.5" fill="var(--bar3)"/>`:"")+`</g>`;
+    if(n<=16 || i%Math.ceil(n/12)===0) g+=`<text x="${x+w/2}" y="${H-6}" font-size="10" text-anchor="middle" fill="currentColor" opacity=".55">${d.day.slice(8)}.${d.day.slice(5,7)}</text>`;
+  });
+  g+=`<text x="2" y="12" font-size="10" fill="currentColor" opacity=".55">${max}</text>`;
+  svg.innerHTML=g;
+}
+
+async function person(code){
+  const meta=rep.rows.find(r=>r.code===code)||{};
+  $("panel").innerHTML=`<button class="btn" id="close" style="float:right">Закрыть</button><h3>${code}${meta.name?" — "+esc(meta.name):""}</h3>
+    <div class="sub">${esc(meta.url||"")}</div><p class="sub">Загружаю…</p>`;
+  $("drawer").classList.add("on");
+  const r=await api("/cabinet/api/people?code="+code+"&"+qs());
+  const names={sub:"подписался",app:"открыл приложение",msg:"написал"};
+  const list=r.people.map(p=>`<div class="person"><b>${esc(p.name||"Без имени")}</b> ${p.username?`<a href="https://t.me/${esc(p.username)}" target="_blank">@${esc(p.username)}</a>`:`<span class="sub">id ${p.uid}</span>`}
+    <div class="sub">${new Date(p.ts*1000).toLocaleString("ru-RU",{timeZone:"Asia/Vladivostok",day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})} · ${p.new?"новый":"уже бывал в боте"}</div>
+    ${p.acts.map(a=>`<span class="tag">${names[a]||a}</span>`).join("")}${p.orders.map(o=>`<span class="tag g">заявка #${o.id} · ${esc(o.status)}</span>`).join("")}</div>`).join("");
+  $("panel").innerHTML=`<button class="btn" id="close" style="float:right">Закрыть</button><h3>${code}${meta.name?" — "+esc(meta.name):""}</h3>
+    <div class="sub">${esc(meta.url||"")}</div><p class="sub">Люди, которые закрепились за ссылкой в выбранный период: ${r.people.length}</p>${list||'<p class="sub">Пока никого.</p>'}`;
+}
+
+// события
+$("periods").addEventListener("click",e=>{ if(e.target.dataset.p) setPeriod(e.target.dataset.p); });
+["dfrom","dto"].forEach(id=>$(id).addEventListener("change",()=>{
+  range={from:$("dfrom").value||null,to:$("dto").value||null};
+  document.querySelectorAll(".chip").forEach(c=>c.classList.remove("on")); load();
+}));
+["q","camp","active"].forEach(id=>$(id).addEventListener("input",render));
+$("head").addEventListener("click",e=>{ const k=e.target.dataset.k; if(!k)return; sort = sort.k===k ? {k,asc:!sort.asc} : {k,asc:["code","name","campaign","url"].includes(k)}; render(); });
+$("body").addEventListener("click",async e=>{
+  if(e.target.dataset.url){ try{ await navigator.clipboard.writeText(e.target.dataset.url); toast("Ссылка скопирована"); }catch(_){ prompt("Скопируйте ссылку", e.target.dataset.url); } }
+  else if(e.target.classList.contains("code")) person(e.target.dataset.code);
+});
+$("body").addEventListener("change",async e=>{
+  const i=e.target; if(!i.dataset.f) return;
+  const res=await api("/cabinet/api/link",{code:i.dataset.code,[i.dataset.f]:i.value});
+  if(res.ok){ i.classList.add("saved"); setTimeout(()=>i.classList.remove("saved"),900); toast("Сохранено");
+    [rep,all].forEach(R=>{ const r=R.rows.find(x=>x.code===i.dataset.code); if(r) Object.assign(r,res.row); });
+    if(i.dataset.f==="spend"||i.dataset.f==="campaign") load(); }
+});
+$("add").addEventListener("click",async()=>{ await api("/cabinet/api/add",{n:10}); toast("Добавлено 10 ссылок"); load(); });
+$("drawer").addEventListener("click",e=>{ if(e.target.id==="drawer"||e.target.id==="close") $("drawer").classList.remove("on"); });
+window.addEventListener("resize",()=>rep&&chart());
+setInterval(()=>{ if(!document.hidden && !document.activeElement.matches("td input")) load(); }, 60000);
+
+let p0="30"; try{ p0=localStorage.getItem("lumio_cab_period")||"30"; }catch(e){}
+setPeriod(p0);
+</script>
+</body>
+</html>
