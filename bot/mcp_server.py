@@ -577,6 +577,11 @@ def _call(name, args, host):
         return server_update()
     if name == "audio_levels":
         return audio_levels(args)
+    if name == "recent_files":  # последние файлы на сервере — найти результат, если ответ потерялся
+        n = int(args.get("n") or 10)
+        items = sorted((f for f in os.listdir(GEN_DIR) if not f.startswith(".")),
+                       key=lambda f: os.path.getmtime(os.path.join(GEN_DIR, f)), reverse=True)[:n]
+        return _text("\n".join(_url(f, host) for f in items) or "пусто")
     if name == "quiz_idea":  # проверка нейросети квиза (YandexGPT), ~0,1 ₽ за вызов
         import index
         res = index.gen_idea(args.get("answers", ""), "mcp")
