@@ -14,7 +14,8 @@
 }
 src — имя файла в /files, ссылка на наш /files или внешняя ссылка.
 Картинка как сегмент: {"src": "bg.jpg", "image": true, "length": 3.2}; поверх любого сегмента можно
-положить PNG с прозрачностью: "overlay": "layer.png" (растягивается на 1920x1080).
+положить PNG с прозрачностью: "overlay": "layer.png" (растягивается на 1920x1080, кладётся ПОСЛЕ crop).
+"crop": [x, y, w, h] — приблизить часть кадра (координаты 1920x1080).
 transition — переход ПЕРЕД сегментом: cut (по умолчанию), fade, fadeblack, fadewhite, dissolve; dur — секунды.
 """
 import json
@@ -84,6 +85,9 @@ def build(spec, resolve, out_path, log=print):
     for i, s in enumerate(segs):
         base = (f"[{i}:v]fps={FPS},scale={W}:{H}:force_original_aspect_ratio=decrease,"
                 f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2,setsar=1")
+        if s.get("crop"):          # "crop": [x, y, w, h] в координатах 1920x1080 — приблизить часть кадра
+            cx, cy, cw, ch = [int(v) for v in s["crop"]]
+            base += f",crop={cw}:{ch}:{cx}:{cy},scale={W}:{H}:flags=lanczos,setsar=1"
         if i in ov_of:
             filters.append(base + f"[b{i}]")
             filters.append(f"[{ov_of[i]}:v]scale={W}:{H},format=rgba[o{i}]")
