@@ -13,6 +13,8 @@
   ]
 }
 src — имя файла в /files, ссылка на наш /files или внешняя ссылка.
+Картинка как сегмент: {"src": "bg.jpg", "image": true, "length": 3.2}; поверх любого сегмента можно
+положить PNG с прозрачностью: "overlay": "layer.png" (растягивается на 1920x1080).
 transition — переход ПЕРЕД сегментом: cut (по умолчанию), fade, fadeblack, fadewhite, dissolve; dur — секунды.
 """
 import json
@@ -57,17 +59,37 @@ def build(spec, resolve, out_path, log=print):
     if not segs:
         raise RuntimeError("пустой список segments")
     args, filters, lens = [exe, "-y", "-hide_banner", "-loglevel", "error"], [], []
+    seg_in, overlays = [], []      # индексы входов: сначала все сегменты, потом картинки-наложения
     for i, s in enumerate(segs):
         path = resolve(s["src"])
-        start = float(s.get("start") or 0)
-        end = s.get("end")
-        end = float(end) if end is not None else duration(path)
-        if end <= start:
-            raise RuntimeError(f"сегмент {i}: end <= start")
-        args += ["-ss", f"{start:.3f}", "-t", f"{end - start:.3f}", "-i", path]
-        lens.append(end - start)
-        filters.append(f"[{i}:v]fps={FPS},scale={W}:{H}:force_original_aspect_ratio=decrease,"
-                       f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p,settb=AVTB[v{i}]")
+        if s.get("image"):        # картинка как кусок видео: {"src": "x.jpg", "image": true, "dur": 3}
+            d = float(s.get("dur_image") or s.get("length") or 3.0)
+            args += ["-loop", "1", "-framerate", str(FPS), "-t", f"{d:.3f}", "-i", path]
+            lens.append(d)
+        else:
+            start = float(s.get("start") or 0)
+            end = s.get("end")
+            end = float(end) if end is not None else duration(path)
+            if end <= start:
+                raise RuntimeError(f"сегмент {i}: end <= start")
+            args += ["-ss", f"{start:.3f}", "-t", f"{end - start:.3f}", "-i", path]
+            lens.append(end - start)
+        seg_in.append(i)
+    n_seg = len(segs)
+    for i, s in enumerate(segs):   # "overlay": PNG с прозрачностью поверх сегмента (растягивается на 1920x1080)
+        if s.get("overlay"):
+            args += ["-loop", "1", "-framerate", str(FPS), "-t", f"{lens[i]:.3f}", "-i", resolve(s["overlay"])]
+            overlays.append((i, n_seg + len(overlays)))
+    ov_of = dict(overlays)
+    for i, s in enumerate(segs):
+        base = (f"[{i}:v]fps={FPS},scale={W}:{H}:force_original_aspect_ratio=decrease,"
+                f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2,setsar=1")
+        if i in ov_of:
+            filters.append(base + f"[b{i}]")
+            filters.append(f"[{ov_of[i]}:v]scale={W}:{H},format=rgba[o{i}]")
+            filters.append(f"[b{i}][o{i}]overlay=0:0:format=auto,format=yuv420p,settb=AVTB[v{i}]")
+        else:
+            filters.append(base + f",format=yuv420p,settb=AVTB[v{i}]")
     cur, total = "v0", lens[0]
     for i in range(1, len(segs)):
         tr = (segs[i].get("transition") or "cut").lower()
@@ -86,7 +108,7 @@ def build(spec, resolve, out_path, log=print):
     # аудио
     auds = spec.get("audio") or []
     amix = []
-    n_in = len(segs)
+    n_in = len(segs) + len(overlays)
     for j, a in enumerate(auds):
         # start/dur — взять кусок исходного трека (секунды внутри файла)
         if a.get("start"):
