@@ -17,6 +17,11 @@ src — имя файла в /files, ссылка на наш /files или вн
 положить PNG с прозрачностью: "overlay": "layer.png" (растягивается на 1920x1080, кладётся ПОСЛЕ crop).
 "crop": [x, y, w, h] — приблизить часть кадра (координаты 1920x1080).
 transition — переход ПЕРЕД сегментом: cut (по умолчанию), fade, fadeblack, fadewhite, dissolve; dur — секунды.
+"eq": цветокоррекция сегмента (ffmpeg eq, считается на каждом кадре), например
+  {"brightness": 0.01, "saturation": "0.98-0.03*max(0,1-t/1.5)", "contrast": 1.0, "gamma": 1.0}
+  brightness −1…1 (0 — без изменений), saturation 0…3, contrast −2…2, gamma 0.1…10 (1 — без изменений).
+  Значение — число или выражение от t (секунды от начала сегмента): так можно плавно свести поправку к нулю
+  и подогнать цвет одной генерации под соседнюю на стыке.
 """
 import json
 import os
@@ -49,6 +54,31 @@ def duration(path):
         raise RuntimeError("не удалось узнать длительность: " + os.path.basename(path))
     h, mi, s = m.groups()
     return int(h) * 3600 + int(mi) * 60 + float(s)
+
+
+_EQ_KEYS = ("brightness", "contrast", "saturation", "gamma")
+_EQ_EXPR = re.compile(r"^[0-9a-z_.+\-*/(), ]+$")
+
+
+def eq_filter(eq, i):
+    """Фильтр ffmpeg eq для сегмента i. Значения — числа или выражения от t; проверяются, чтобы
+    не сломать граф фильтров (без кавычек, двоеточий, скобок графа и т. п.)."""
+    if not isinstance(eq, dict):
+        raise RuntimeError(f"сегмент {i}: eq должен быть объектом")
+    parts = []
+    for k, v in eq.items():
+        if k not in _EQ_KEYS:
+            raise RuntimeError(f"сегмент {i}: eq.{k} — допустимы {', '.join(_EQ_KEYS)}")
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            parts.append(f"{k}={float(v):.5f}")
+        else:
+            v = str(v).strip().lower()
+            if not v or not _EQ_EXPR.match(v):
+                raise RuntimeError(f"сегмент {i}: eq.{k} — недопустимое выражение")
+            parts.append(f"{k}='{v}'")
+    if not parts:
+        raise RuntimeError(f"сегмент {i}: пустой eq")
+    return "eq=" + ":".join(parts) + ":eval=frame"
 
 
 def build(spec, resolve, out_path, log=print):
@@ -88,6 +118,8 @@ def build(spec, resolve, out_path, log=print):
         if s.get("crop"):          # "crop": [x, y, w, h] в координатах 1920x1080 — приблизить часть кадра
             cx, cy, cw, ch = [int(v) for v in s["crop"]]
             base += f",crop={cw}:{ch}:{cx}:{cy},scale={W}:{H}:flags=lanczos,setsar=1"
+        if s.get("eq"):            # "eq": {"brightness": .., "saturation": .., "contrast": .., "gamma": ..}
+            base += "," + eq_filter(s["eq"], i)
         if i in ov_of:
             filters.append(base + f"[b{i}]")
             filters.append(f"[{ov_of[i]}:v]scale={W}:{H},format=rgba[o{i}]")
