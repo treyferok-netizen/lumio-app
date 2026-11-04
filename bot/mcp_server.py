@@ -85,6 +85,9 @@ def _preview(data, width=1024):
 
 def _fetch(url, limit=40 * 1024 * 1024):
     r = requests.get(url, timeout=(10, 120), stream=True, headers={"User-Agent": "lumio-mcp"})
+    if r.status_code == 403:   # некоторые CDN (напр. ссылки ElevenLabs) не пускают нестандартный User-Agent
+        r = requests.get(url, timeout=(10, 120), stream=True,
+                         headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"})
     r.raise_for_status()
     out = bytearray()
     for chunk in r.iter_content(256 * 1024):
