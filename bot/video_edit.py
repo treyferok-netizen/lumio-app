@@ -22,6 +22,11 @@ transition — переход ПЕРЕД сегментом: cut (по умол�
   brightness −1…1 (0 — без изменений), saturation 0…3, contrast −2…2, gamma 0.1…10 (1 — без изменений).
   Значение — число или выражение от t (секунды от начала сегмента): так можно плавно свести поправку к нулю
   и подогнать цвет одной генерации под соседнюю на стыке.
+  ВНИМАНИЕ: у ffmpeg eq мелкие значения brightness (< ~0.01) и saturation рядом с 1 ведут себя
+  непредсказуемо (кадр может стать темнее). Для тонкой подгонки цвета на стыке используйте "gain".
+"gain": усиление каналов RGB (1 — без изменений), число/выражение от t для всех каналов
+  или {"r": .., "g": .., "b": ..}, например {"r": "1.008+0.02*max(0,1-t/1.5)", "g": 1.01, "b": 1.02}.
+  Подгонка: gain канала = среднее канала в кадре-образце / среднее в кадре сегмента.
 """
 import json
 import os
@@ -81,6 +86,29 @@ def eq_filter(eq, i):
     return "eq=" + ":".join(parts) + ":eval=frame"
 
 
+def _gain_expr(v, i, ch):
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        return f"{float(v):.5f}"
+    v = str(v).strip().lower()
+    if not v or not _EQ_EXPR.match(v):
+        raise RuntimeError(f"сегмент {i}: gain.{ch} — недопустимое выражение")
+    return "(" + re.sub(r"\bt\b", "T", v) + ")"   # в geq время — T
+
+
+def gain_filter(gain, i):
+    """Усиление каналов RGB через geq (время в выражениях — t, секунды от начала сегмента)."""
+    if isinstance(gain, dict):
+        bad = set(gain) - {"r", "g", "b"}
+        if bad:
+            raise RuntimeError(f"сегмент {i}: gain — допустимы только r, g, b")
+        ex = {c: _gain_expr(gain.get(c, 1.0), i, c) for c in "rgb"}
+    else:
+        e = _gain_expr(gain, i, "rgb")
+        ex = {c: e for c in "rgb"}
+    chans = ":".join(f"{c}='clip({c}(X,Y)*{ex[c]},0,255)'" for c in "rgb")
+    return f"format=gbrp,geq={chans}"
+
+
 def build(spec, resolve, out_path, log=print):
     """resolve(src) -> локальный путь. Возвращает длительность результата."""
     exe = ffmpeg_exe()
@@ -120,6 +148,8 @@ def build(spec, resolve, out_path, log=print):
             base += f",crop={cw}:{ch}:{cx}:{cy},scale={W}:{H}:flags=lanczos,setsar=1"
         if s.get("eq"):            # "eq": {"brightness": .., "saturation": .., "contrast": .., "gamma": ..}
             base += "," + eq_filter(s["eq"], i)
+        if s.get("gain") is not None:   # "gain": усиление каналов RGB, число/выражение от t или {"r","g","b"}
+            base += "," + gain_filter(s["gain"], i)
         if i in ov_of:
             filters.append(base + f"[b{i}]")
             filters.append(f"[{ov_of[i]}:v]scale={W}:{H},format=rgba[o{i}]")
