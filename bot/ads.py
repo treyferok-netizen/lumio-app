@@ -1,6 +1,6 @@
 """Рекламные ссылки Lumio (Telegram Ads) и кабинет менеджера с аналитикой по ним.
 
-Ссылка:  https://t.me/LumioMultBot?start=ad001  …  ad100
+Ссылка:  https://t.me/LumioMultBot?start=ad001  …  ad600
 Бот при /start ad001 записывает событие start с меткой и «привязывает» человека к первой рекламной
 ссылке, по которой он пришёл. Дальше всё, что человек делает (подписка, приложение, вопросы, заявки,
 оплата), считается в пользу этой ссылки.
@@ -57,19 +57,25 @@ def _write(path, data):
     os.replace(tmp, path)
 
 
+LINKS_TOTAL = int(os.environ.get("AD_LINKS_TOTAL", "600"))   # сколько ссылок adNNN держать всегда
+
+
 def links():
-    """{code: {"name", "campaign", "spend", "created"}}; при первом запуске создаёт ad001…ad100."""
+    """{code: {"name", "campaign", "spend", "created"}}; сам дополняет список до ad001…ad600 (AD_LINKS_TOTAL)."""
     with _lock:
-        data = _read(LINKS, None)
-        if not data:
+        data = _read(LINKS, None) or {}
+        missing = [f"ad{i:03d}" for i in range(1, LINKS_TOTAL + 1) if f"ad{i:03d}" not in data]
+        if missing:
             now = time.time()
-            data = {f"ad{i:03d}": {"name": "", "campaign": "", "spend": 0, "created": now} for i in range(1, 101)}
+            for c in missing:
+                data[c] = {"name": "", "campaign": "", "spend": 0, "created": now}
+            data = dict(sorted(data.items(), key=lambda kv: int(kv[0][2:]) if CODE_RE.match(kv[0]) else 10 ** 9))
             _write(LINKS, data)
         return data
 
 
 def add_links(n):
-    n = max(1, min(int(n), 100))
+    n = max(1, min(int(n), 500))
     with _lock:
         data = _read(LINKS, {})
         nums = [int(c[2:]) for c in data if CODE_RE.match(c)] or [0]
