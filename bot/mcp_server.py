@@ -435,6 +435,111 @@ def audio_levels(args):
     return _text(f"Длина звука: {len(a) / 8000:.1f} с\n" + "\n".join(rows))
 
 
+# ---------- диск ----------
+# файлы, которые очистка не трогает никогда (фирменные заготовки)
+PROTECTED_PREFIXES = ("lumio_outro", "logo", "audio-c779c910")
+_AUTO_RE = re.compile(r"^(\d{4})-\d{6}-[0-9a-f]{16}\.(jpg|png)$")   # кадры и картинки Seedream: MMDD-HHMMSS-hex
+
+
+def _fmt_mb(n):
+    return f"{n / 1024 / 1024:.1f} МБ"
+
+
+def _dir_size(path):
+    total = 0
+    for root, _dirs, files in os.walk(path):
+        for f in files:
+            try:
+                total += os.path.getsize(os.path.join(root, f))
+            except OSError:
+                pass
+    return total
+
+
+def _gen_files():
+    os.makedirs(GEN_DIR, exist_ok=True)
+    out = []
+    for f in os.listdir(GEN_DIR):
+        p = os.path.join(GEN_DIR, f)
+        if f.startswith(".") or not os.path.isfile(p):
+            continue
+        st = os.stat(p)
+        out.append((f, st.st_size, st.st_mtime))
+    return out
+
+
+def disk_status(args):
+    """Сколько места на диске и чем занята папка с файлами коннектора. Ничего не меняет."""
+    import shutil
+    du = shutil.disk_usage(GEN_DIR if os.path.isdir(GEN_DIR) else "/")
+    lines = [f"Диск: занято {_fmt_mb(du.used)} из {_fmt_mb(du.total)}, свободно {_fmt_mb(du.free)}"]
+    files = _gen_files()
+    lines.append(f"Папка файлов {GEN_DIR}: {len(files)} шт., {_fmt_mb(sum(s for _, s, _ in files))}")
+    groups = {}
+    for f, s, mt in files:
+        day = time.strftime("%Y-%m-%d", time.localtime(mt))
+        ext = f.rsplit(".", 1)[-1].lower()
+        g = groups.setdefault((day, ext), [0, 0])
+        g[0] += 1
+        g[1] += s
+    lines.append("По дням и типам:")
+    for (day, ext), (n, s) in sorted(groups.items()):
+        lines.append(f"  {day} {ext:4s} {n:4d} шт. {_fmt_mb(s)}")
+    big = sorted(files, key=lambda x: -x[1])[:int(args.get("top") or 15)]
+    lines.append("Самые большие:")
+    lines += [f"  {_fmt_mb(s):>9s}  {time.strftime('%m-%d', time.localtime(mt))}  {f}" for f, s, mt in big]
+    other = {}
+    for d in ("/var/log", "/tmp", "/var/cache/apt", "/root/.cache", seedream.DIR):
+        if os.path.isdir(d):
+            other[d] = _dir_size(d)
+    lines.append("Другие папки:")
+    lines += [f"  {_fmt_mb(s):>9s}  {d}" for d, s in other.items()]
+    return _text("\n".join(lines))
+
+
+def files_cleanup(args):
+    """Удаление файлов коннектора. Без confirm — только список и объём; удаляет только с confirm,
+    равным коду из предпросмотра (тот же набор файлов). Защищённые заготовки не трогает никогда.
+    before  — "YYYY-MM-DD": файлы, изменённые раньше этой даты;
+    names   — точные имена файлов; prefixes — начала имён;
+    keep_prefixes — начала имён, которые оставить, даже если попали под отбор."""
+    import hashlib
+    before = args.get("before")
+    names = set(args.get("names") or [])
+    prefixes = tuple(args.get("prefixes") or ())
+    keep = tuple(args.get("keep_prefixes") or ()) + PROTECTED_PREFIXES
+    if not (before or names or prefixes):
+        return _err("Укажите before, names или prefixes.")
+    cutoff = time.mktime(time.strptime(before, "%Y-%m-%d")) if before else None
+    sel = []
+    for f, s, mt in _gen_files():
+        if f.startswith(keep):
+            continue
+        if (cutoff and mt < cutoff) or f in names or (prefixes and f.startswith(prefixes)):
+            sel.append((f, s, mt))
+    sel.sort()
+    code = hashlib.sha256("\n".join(f for f, _, _ in sel).encode()).hexdigest()[:10]
+    total = sum(s for _, s, _ in sel)
+    if args.get("confirm") != code:
+        named = [f for f, _, _ in sel if not _AUTO_RE.match(f)]
+        head = (f"Предпросмотр: {len(sel)} файлов, {_fmt_mb(total)} "
+                f"(кадры/картинки с авто-именами: {len(sel) - len(named)}, остальные: {len(named)}).\n"
+                f"Чтобы удалить именно этот набор, повторите вызов с теми же параметрами и confirm=\"{code}\".")
+        return _text(head + "\nФайлы не с авто-именами:\n" + "\n".join(
+            f"  {_fmt_mb(s):>9s}  {f}" for f, s, _ in sel if f in named[:200]))
+    removed, freed = 0, 0
+    for f, s, _ in sel:
+        try:
+            os.remove(os.path.join(GEN_DIR, f))
+            removed += 1
+            freed += s
+        except OSError:
+            pass
+    import shutil
+    return _text(f"Удалено {removed} файлов, освобождено {_fmt_mb(freed)}. "
+                 f"Свободно на диске: {_fmt_mb(shutil.disk_usage(GEN_DIR).free)}.")
+
+
 def server_update():
     import subprocess
     repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -544,6 +649,19 @@ TOOLS = [
          "file": {"type": "string"}, "start": {"type": "number"}, "end": {"type": "number"},
          "step": {"type": "number", "description": "шаг в секундах, по умолчанию 1"}},
          "required": ["file"]}},
+    {"name": "disk_status",
+     "description": "Сколько места на диске сервера и чем занята папка файлов (по дням и типам, самые большие). Ничего не меняет. Бесплатно.",
+     "inputSchema": {"type": "object", "properties": {"top": {"type": "integer"}}}},
+    {"name": "files_cleanup",
+     "description": "Удалить файлы с сервера Lumio (только с согласия пользователя). Без confirm — предпросмотр: список и объём "
+                    "и код подтверждения; удаляет только при повторном вызове с теми же параметрами и этим confirm. "
+                    "Фирменные заготовки (lumio_outro, logo, звук логотипа) не удаляются никогда.",
+     "inputSchema": {"type": "object", "properties": {
+         "before": {"type": "string", "description": "YYYY-MM-DD — файлы старше этой даты"},
+         "names": {"type": "array", "items": {"type": "string"}},
+         "prefixes": {"type": "array", "items": {"type": "string"}},
+         "keep_prefixes": {"type": "array", "items": {"type": "string"}},
+         "confirm": {"type": "string"}}}},
     {"name": "seedream_status",
      "description": "Подключён ли ключ, модель, сколько картинок осталось на сегодня по лимиту.",
      "inputSchema": {"type": "object", "properties": {}}},
@@ -577,6 +695,10 @@ def _call(name, args, host):
         return server_update()
     if name == "audio_levels":
         return audio_levels(args)
+    if name == "disk_status":
+        return disk_status(args)
+    if name == "files_cleanup":
+        return files_cleanup(args)
     if name == "recent_files":  # последние файлы на сервере — найти результат, если ответ потерялся
         n = int(args.get("n") or 10)
         items = sorted((f for f in os.listdir(GEN_DIR) if not f.startswith(".")),
