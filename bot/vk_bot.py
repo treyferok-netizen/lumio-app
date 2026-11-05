@@ -27,7 +27,7 @@ GROUP = int(os.environ.get("VK_GROUP_ID", "242968024"))
 V = "5.199"
 STATE_FILE = os.environ.get("VK_STATE_FILE", "/var/lib/lumio-bot/vk_state.json")
 HUMAN_HOURS = float(os.environ.get("HUMAN_HOURS", "24"))
-EXAMPLES = [x.strip() for x in os.environ.get("VK_EXAMPLES", "video-242968024_456239017,video-242968024_456239019,video-242968024_456239018").split(",") if x.strip()]  # video-242968024_456239017,...
+EXAMPLES = [x.strip() for x in os.environ.get("VK_EXAMPLES", "video-242968024_456239023,video-242968024_456239017,video-242968024_456239019").split(",") if x.strip()]  # video-242968024_456239017,...
 VIDEOS_URL = f"https://vk.com/videos-{GROUP}"
 SKETCH_FREE_FOR = os.environ.get("VK_SKETCH_FREE", "members")  # members — только подписчикам сообщества; all — всем
 
