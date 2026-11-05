@@ -7,7 +7,7 @@
   MCP_SECRET            секретная часть адреса (без неё коннектор выключен)
   SEEDREAM_API_KEY      ключ BytePlus ModelArk (в чат не присылать)
   SEEDREAM_MODEL / SEEDREAM_BASE / SEEDREAM_DAILY_LIMIT — как в seedream.py
-  PUBLIC_BASE           внешний адрес сервера, напр. https://193-32-178-96.sslip.io (по умолчанию берётся из запроса)
+  PUBLIC_BASE           внешний адрес сервера, напр. https://212-87-223-41.sslip.io (по умолчанию берётся из запроса)
 
 Протокол: MCP Streamable HTTP, ответы обычным JSON (без SSE). Генерация — строго одна за раз.
 """
