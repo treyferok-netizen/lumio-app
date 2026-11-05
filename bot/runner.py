@@ -17,6 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import ads
 import index
 import mcp_server
+import vk_bot
 
 MAX_BODY = 12 * 1024 * 1024
 DENIED = ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'>"
@@ -211,6 +212,7 @@ class Web(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     threading.Thread(target=poll, daemon=True).start()
+    vk_bot.start()
     srv = ThreadingHTTPServer(("127.0.0.1", 8080), Web)
     print("orders on 127.0.0.1:8080; mcp", "on" if mcp_server.enabled() else "off (MCP_SECRET)", flush=True)
     srv.serve_forever()
