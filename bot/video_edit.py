@@ -16,6 +16,11 @@ src — имя файла в /files, ссылка на наш /files или вн
 Картинка как сегмент: {"src": "bg.jpg", "image": true, "length": 3.2}; поверх любого сегмента можно
 положить PNG с прозрачностью: "overlay": "layer.png" (растягивается на 1920x1080, кладётся ПОСЛЕ crop).
 "crop": [x, y, w, h] — приблизить часть кадра (координаты 1920x1080).
+"place": вставить картинки (или видео) в прямоугольники кадра поверх сегмента, по порядку:
+  [{"src": "photo.jpg", "rect": [x, y, w, h], "crop": [x, y, w, h], "eq": {..}, "gain": {..}, "opacity": 1.0}]
+  rect — куда поставить (координаты 1920x1080), crop — какую часть исходника взять (в пикселях исходника,
+  необязательно), eq/gain — как у сегмента, opacity — прозрачность 0…1. Видео: "video": true, "start": секунды.
+  Пример: фото в окно рамки на стене, экран телефона, коллаж «до/после».
 transition — переход ПЕРЕД сегментом: cut (по умолчанию), fade, fadeblack, fadewhite, dissolve; dur — секунды.
 "eq": цветокоррекция сегмента (ffmpeg eq, считается на каждом кадре), например
   {"brightness": 0.01, "saturation": "0.98-0.03*max(0,1-t/1.5)", "contrast": 1.0, "gamma": 1.0}
@@ -140,6 +145,18 @@ def build(spec, resolve, out_path, log=print):
             args += ["-loop", "1", "-framerate", str(FPS), "-t", f"{lens[i]:.3f}", "-i", resolve(s["overlay"])]
             overlays.append((i, n_seg + len(overlays)))
     ov_of = dict(overlays)
+    places = {}                    # "place": картинки/видео в прямоугольниках поверх сегмента
+    n_extra = n_seg + len(overlays)
+    for i, s in enumerate(segs):
+        for p in (s.get("place") or []):
+            if not isinstance(p, dict) or "src" not in p or len(p.get("rect") or []) != 4:
+                raise RuntimeError(f"сегмент {i}: place — нужен src и rect [x, y, w, h]")
+            if p.get("video"):
+                args += ["-ss", f"{float(p.get('start') or 0):.3f}", "-t", f"{lens[i]:.3f}", "-i", resolve(p["src"])]
+            else:
+                args += ["-loop", "1", "-framerate", str(FPS), "-t", f"{lens[i]:.3f}", "-i", resolve(p["src"])]
+            places.setdefault(i, []).append((n_extra, p))
+            n_extra += 1
     for i, s in enumerate(segs):
         base = (f"[{i}:v]fps={FPS},scale={W}:{H}:force_original_aspect_ratio=decrease,"
                 f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2,setsar=1")
@@ -150,10 +167,32 @@ def build(spec, resolve, out_path, log=print):
             base += "," + eq_filter(s["eq"], i)
         if s.get("gain") is not None:   # "gain": усиление каналов RGB, число/выражение от t или {"r","g","b"}
             base += "," + gain_filter(s["gain"], i)
-        if i in ov_of:
+        if i in ov_of or i in places:
             filters.append(base + f"[b{i}]")
-            filters.append(f"[{ov_of[i]}:v]scale={W}:{H},format=rgba[o{i}]")
-            filters.append(f"[b{i}][o{i}]overlay=0:0:format=auto,format=yuv420p,settb=AVTB[v{i}]")
+            lbl = f"b{i}"
+            for j, (k, p) in enumerate(places.get(i, [])):
+                x, y, w, h = [int(round(float(v))) for v in p["rect"]]
+                f = f"[{k}:v]fps={FPS},setsar=1"
+                if p.get("crop"):
+                    cx, cy, cw, ch = [int(round(float(v))) for v in p["crop"]]
+                    f += f",crop={cw}:{ch}:{cx}:{cy}"
+                f += f",scale={w}:{h}:flags=lanczos,setsar=1"
+                if p.get("eq"):
+                    f += "," + eq_filter(p["eq"], i)
+                if p.get("gain") is not None:
+                    f += "," + gain_filter(p["gain"], i)
+                f += ",format=rgba"
+                op = p.get("opacity")
+                if op is not None and float(op) < 1:
+                    f += f",colorchannelmixer=aa={max(0.0, float(op)):.3f}"
+                filters.append(f + f"[p{i}_{j}]")
+                filters.append(f"[{lbl}][p{i}_{j}]overlay={x}:{y}:format=auto:eof_action=repeat[q{i}_{j}]")
+                lbl = f"q{i}_{j}"
+            if i in ov_of:
+                filters.append(f"[{ov_of[i]}:v]scale={W}:{H},format=rgba[o{i}]")
+                filters.append(f"[{lbl}][o{i}]overlay=0:0:format=auto[r{i}]")
+                lbl = f"r{i}"
+            filters.append(f"[{lbl}]format=yuv420p,settb=AVTB[v{i}]")
         else:
             filters.append(base + f",format=yuv420p,settb=AVTB[v{i}]")
     cur, total = "v0", lens[0]
@@ -174,7 +213,7 @@ def build(spec, resolve, out_path, log=print):
     # аудио
     auds = spec.get("audio") or []
     amix = []
-    n_in = len(segs) + len(overlays)
+    n_in = n_extra
     for j, a in enumerate(auds):
         # start/dur — взять кусок исходного трека (секунды внутри файла)
         if a.get("start"):
