@@ -16,6 +16,9 @@ src — имя файла в /files, ссылка на наш /files или вн
 Картинка как сегмент: {"src": "bg.jpg", "image": true, "length": 3.2}; поверх любого сегмента можно
 положить PNG с прозрачностью: "overlay": "layer.png" (растягивается на 1920x1080, кладётся ПОСЛЕ crop).
 "crop": [x, y, w, h] — приблизить часть кадра (координаты 1920x1080).
+"size": [w, h] — размер результата (по умолчанию [1920, 1080]; квадрат — [1080, 1080]); координаты crop,
+  place.rect — в этом размере. "fit": "pad" (вписать с полями, по умолчанию) или "fill" (заполнить, обрезать
+  по центру) — для всего монтажа или у сегмента; "pad_color": "#0C0D29" — цвет полей у сегмента.
 "place": вставить картинки (или видео) в прямоугольники кадра поверх сегмента, по порядку:
   [{"src": "photo.jpg", "rect": [x, y, w, h], "crop": [x, y, w, h], "eq": {..}, "gain": {..}, "opacity": 1.0}]
   rect — куда поставить (координаты 1920x1080), crop — какую часть исходника взять (в пикселях исходника,
@@ -124,6 +127,8 @@ def build(spec, resolve, out_path, log=print):
     exe = ffmpeg_exe()
     if not exe:
         raise RuntimeError("на сервере нет ffmpeg (lumio-update поставит imageio-ffmpeg)")
+    W, H = [int(v) for v in (spec.get("size") or (1920, 1080))]   # "size": [1080, 1080] — квадрат и т. п.
+    fit_all = spec.get("fit") or "pad"
     segs = spec.get("segments") or []
     if not segs:
         raise RuntimeError("пустой список segments")
@@ -163,8 +168,17 @@ def build(spec, resolve, out_path, log=print):
             places.setdefault(i, []).append((n_extra, p))
             n_extra += 1
     for i, s in enumerate(segs):
-        base = (f"[{i}:v]fps={FPS},scale={W}:{H}:force_original_aspect_ratio=decrease,"
-                f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2,setsar=1")
+        fit = s.get("fit") or fit_all
+        if fit == "fill":          # заполнить кадр целиком, лишнее обрезать по центру
+            base = (f"[{i}:v]fps={FPS},scale={W}:{H}:force_original_aspect_ratio=increase,"
+                    f"crop={W}:{H},setsar=1")
+        else:                      # вписать целиком, поля — цветом pad_color
+            pc = str(s.get("pad_color") or "black")
+            if not re.match(r"^(#[0-9a-fA-F]{6}|[a-z]+)$", pc):
+                raise RuntimeError(f"сегмент {i}: pad_color — #RRGGBB или имя цвета")
+            pc = pc.replace("#", "0x")
+            base = (f"[{i}:v]fps={FPS},scale={W}:{H}:force_original_aspect_ratio=decrease,"
+                    f"pad={W}:{H}:(ow-iw)/2:(oh-ih)/2:color={pc},setsar=1")
         if s.get("crop"):          # "crop": [x, y, w, h] в координатах 1920x1080 — приблизить часть кадра
             cx, cy, cw, ch = [int(v) for v in s["crop"]]
             base += f",crop={cw}:{ch}:{cx}:{cy},scale={W}:{H}:flags=lanczos,setsar=1"
