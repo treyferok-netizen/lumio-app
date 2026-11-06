@@ -22,6 +22,11 @@ src — имя файла в /files, ссылка на наш /files или вн
   необязательно), eq/gain — как у сегмента, opacity — прозрачность 0…1. Видео: "video": true, "start": секунды.
   Пример: фото в окно рамки на стене, экран телефона, коллаж «до/после».
 transition — переход ПЕРЕД сегментом: cut (по умолчанию), fade, fadeblack, fadewhite, dissolve; dur — секунды.
+  Также шторки ffmpeg xfade: wiperight, wipeleft, slideright, slideleft, smoothright, smoothleft,
+  circleopen, circleclose, radial, zoomin, hblur, pixelize, fadegrays, distance.
+  wiperight — новый кадр открывается слева, граница идёт слева направо (равномерно); wipeleft — наоборот.
+"line": "divider.png" — у сегмента со шторкой wiperight/wipeleft по границе шторки бежит картинка-линия
+  (PNG 1920x1080 с вертикальной линией по центру, x=960): «волшебная линия открывает следующий кадр».
 "eq": цветокоррекция сегмента (ffmpeg eq, считается на каждом кадре), например
   {"brightness": 0.01, "saturation": "0.98-0.03*max(0,1-t/1.5)", "contrast": 1.0, "gamma": 1.0}
   brightness −1…1 (0 — без изменений), saturation 0…3, contrast −2…2, gamma 0.1…10 (1 — без изменений).
@@ -195,6 +200,10 @@ def build(spec, resolve, out_path, log=print):
             filters.append(f"[{lbl}]format=yuv420p,settb=AVTB[v{i}]")
         else:
             filters.append(base + f",format=yuv420p,settb=AVTB[v{i}]")
+    XF = {"fade", "dissolve", "fadeblack", "fadewhite", "wiperight", "wipeleft", "slideright", "slideleft",
+          "smoothright", "smoothleft", "circleopen", "circleclose", "radial", "zoomin", "hblur", "pixelize",
+          "fadegrays", "distance"}
+    lines = []                     # (вход, offset, dur, направление) — линия по границе шторки
     cur, total = "v0", lens[0]
     for i in range(1, len(segs)):
         tr = (segs[i].get("transition") or "cut").lower()
@@ -205,11 +214,24 @@ def build(spec, resolve, out_path, log=print):
             total += lens[i]
         else:
             d = min(d, lens[i] - 0.05, total - 0.05)
-            name = {"fade": "fade", "dissolve": "dissolve", "fadeblack": "fadeblack",
-                    "fadewhite": "fadewhite"}.get(tr, "fade")
+            name = tr if tr in XF else "fade"
             filters.append(f"[{cur}][v{i}]xfade=transition={name}:duration={d:.3f}:offset={total - d:.3f}[{out}]")
+            if segs[i].get("line") and name in ("wiperight", "wipeleft"):
+                args += ["-loop", "1", "-framerate", str(FPS), "-t", f"{total + 1:.3f}", "-i", resolve(segs[i]["line"])]
+                lines.append((n_extra, total - d, d, name))
+                n_extra += 1
             total += lens[i] - d
         cur = out
+    for j, (k, off, d, name) in enumerate(lines):
+        prog = f"(t-{off:.3f})/{d:.3f}"
+        x = f"{W}*{prog}-{W // 2}" if name == "wiperight" else f"{W}*(1-{prog})-{W // 2}"
+        filters.append(f"[{k}:v]scale={W}:{H},format=rgba[ln{j}]")
+        filters.append(f"[{cur}][ln{j}]overlay=x='{x}':y=0:format=auto:eval=frame:"
+                       f"enable='between(t,{off:.3f},{off + d:.3f})'[lo{j}]")
+        cur = f"lo{j}"
+    if lines:
+        filters.append(f"[{cur}]format=yuv420p[lf]")
+        cur = "lf"
     # аудио
     auds = spec.get("audio") or []
     amix = []
