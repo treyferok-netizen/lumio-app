@@ -14,7 +14,7 @@
   SEEDREAM_BASE         по умолчанию https://ark.ap-southeast.bytepluses.com/api/v3
   SEEDREAM_SIZE         по умолчанию 2560x1440 (16:9)
   SEEDREAM_VARIANTS     сколько вариантов за раз, по умолчанию 2
-  SEEDREAM_DAILY_LIMIT  максимум картинок в сутки, по умолчанию 30
+  SEEDREAM_DAILY_LIMIT  максимум картинок в сутки, по умолчанию 60
 """
 import base64
 import json
@@ -29,7 +29,7 @@ MODEL = os.environ.get("SEEDREAM_MODEL", "seedream-5-0-pro-260628").strip()
 BASE = os.environ.get("SEEDREAM_BASE", "https://ark.ap-southeast.bytepluses.com/api/v3").rstrip("/")
 SIZE = os.environ.get("SEEDREAM_SIZE", "2560x1440")
 VARIANTS = max(1, min(4, int(os.environ.get("SEEDREAM_VARIANTS", "2"))))
-DAILY = int(os.environ.get("SEEDREAM_DAILY_LIMIT", "30"))
+DAILY = int(os.environ.get("SEEDREAM_DAILY_LIMIT", "60"))
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DIR = os.path.dirname(os.environ.get("STATE_FILE", "/var/lib/lumio-bot/state.json")) or "."
