@@ -41,7 +41,7 @@ def poll():
     print("profile", {k: v.get("ok") for k, v in prof.items()}, flush=True)
     offset = None
     while True:
-        q = {"timeout": 50, "allowed_updates": ["message", "callback_query"]}
+        q = {"timeout": 50, "allowed_updates": ["message", "callback_query", "widget_query"]}
         if offset is not None:
             q["offset"] = offset
         res = index.tg("getUpdates", q, timeout=(10, 65))

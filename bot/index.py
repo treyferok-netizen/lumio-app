@@ -34,6 +34,7 @@ import requests
 import ads
 import crm
 import seedream
+import widget
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
 SECRET = os.environ.get("WEBHOOK_SECRET", "")
@@ -46,6 +47,8 @@ MINIAPP_URL = os.environ.get("MINIAPP_URL", "https://t.me/LumioMultBot/app")
 WEBAPP_PAGE = os.environ.get("WEBAPP_PAGE", "https://treyferok-netizen.github.io/lumio-app/")
 CHANNEL = os.environ.get("CHANNEL", "@lumioRF")  # бот должен быть администратором канала (без прав) — иначе подписку не проверить
 CHANNEL_URL = "https://t.me/" + CHANNEL.lstrip("@")
+# кому ещё (кроме админа) показывать прототип виджета: id через запятую — lumio-set WIDGET_TESTERS "123,456"
+WIDGET_TESTERS = {x.strip() for x in os.environ.get("WIDGET_TESTERS", "").split(",") if x.strip()}
 
 API = f"https://api.telegram.org/bot{BOT_TOKEN}/"
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -588,6 +591,9 @@ def handle_admin(msg):
                 f"• {esc(r.get('name') or 'клиент')} #c{cid}" for cid, r in rows) +
                 "\n\nВернуть клиента боту: ответьте /bot на его сообщение.")
         return
+    if text.lower() in ("/w", "/widget"):
+        send_widget(ADMIN)
+        return
     if text.startswith("/") and admin_crm(text):
         return
     if text.startswith("/"):
@@ -653,6 +659,9 @@ def handle_client(msg, context):
         gate(chat_id, text)
         return
 
+    if text in ("/w", "/widget", "/start widget") and str(user.get("id")) in WIDGET_TESTERS:
+        send_widget(chat_id)
+        return
     if text.startswith("/sketch") or text.startswith("/start sketch"):
         if text.startswith("/start"):
             send(chat_id, "Привет! Вы в <b>Lumio</b> ✨ — студии мультфильмов по вашим историям: "
@@ -735,6 +744,9 @@ def handle_update(update, context):
                 _updates_seen.pop(k, None)
     if update.get("callback_query"):
         handle_callback(update["callback_query"])
+        return
+    if update.get("widget_query"):
+        handle_widget_query(update["widget_query"])
         return
     msg = update.get("message")
     if not msg or msg.get("chat", {}).get("type") != "private":
@@ -838,6 +850,40 @@ def deliver_order(order, photos, tg_user):
         else:
             send(tg_user["id"], thanks)
     return bool(res.get("ok"))
+
+
+# ---------------------------------------------------------------- интерактивное сообщение (Bot API 10.4, прототип)
+WIDGET_CAPTION = ("✨ Lumio — мультфильмы по вашей истории.\n"
+                  "Если меню не открылось, обновите Telegram — или нажмите «Открыть Lumio» 👇")
+
+
+def send_widget(chat_id):
+    """Главное меню-виджет: эскиз, калькулятор, анкета. Ошибку Telegram показываем админу как есть."""
+    res = tg("sendWidget", {"chat_id": chat_id, "html": widget.build_html(), "caption": WIDGET_CAPTION,
+                            "width": 0, "height": 0, "allow_queries": True,
+                            "reply_markup": open_app_markup()})
+    if not res.get("ok") and ADMIN:
+        send(ADMIN, "⚠️ Виджет не отправился: " + esc(res.get("description") or res.get("error")))
+    return res
+
+
+def handle_widget_query(q):
+    """Запрос из виджета: «Отправить» в анкете -> заявка в CRM, как из Mini App."""
+    user = q.get("from") or {}
+    uid = user.get("id")
+    order = widget.parse_query(q.get("data"))
+    # ответить нужно в течение 15 секунд — отвечаем сразу, заявку оформляем следом
+    tg("answerWidgetQuery", {"widget_query_id": q["id"], "data": "ok" if order else "unknown"})
+    if not order or not uid:
+        return
+    chat_id = (q.get("chat") or {}).get("id") or uid
+    if q.get("message_id"):  # запоминаем в самом сообщении, что заявка отправлена: при повторном открытии — экран «готово»
+        tg("editMessageWidgetData", {"chat_id": chat_id, "message_id": q["message_id"], "chat_data": "done"})
+    un = user.get("username") or ""
+    order["name"] = " ".join(x for x in [user.get("first_name"), user.get("last_name")] if x) or "Клиент"
+    order["contact"] = ("@" + un) if un else "Telegram"
+    deliver_order(order, [], {"id": uid, "username": un})
+    send(uid, "📸 Пришлите сюда 2–3 фото героя — лицо крупно, при хорошем свете. Передадим художнику.")
 
 
 # ---------------------------------------------------------------- mini-CRM (статусы заявок, воронка)
@@ -999,7 +1045,7 @@ def handler(event, context):
         if not SECRET or qs.get("key") != SECRET:
             return respond(403, {"ok": False, "error": "bad key"})
         hook = tg("setWebhook", {"url": f"{PUBLIC_URL}?src=tg", "secret_token": SECRET,
-                                 "allowed_updates": ["message", "callback_query"], "drop_pending_updates": True})
+                                 "allowed_updates": ["message", "callback_query", "widget_query"], "drop_pending_updates": True})
         cmds = setup_profile()
         return respond(200, {"webhook": hook, "commands": cmds, "admin_set": bool(ADMIN),
                              "gpt_ready": bool(FOLDER and (API_KEY or iam_headers(context)))})
