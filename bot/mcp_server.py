@@ -741,6 +741,9 @@ def _call(name, args, host):
         return _image_result(_save(data, "png" if ctype == "image/png" else "jpg"), host, "Сохранено.")
     if name == "kling_upload":
         return kling_upload(args)
+    if name == "svs_status":  # бот-примерочная «Сила в Стиле»
+        import svs_bot
+        return _text(json.dumps(svs_bot.status(), ensure_ascii=False))
     if name.startswith("fashn_"):
         return fashn_tool(name, args, host)
     if name.startswith("eleven_"):
