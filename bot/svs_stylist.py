@@ -1,15 +1,19 @@
-"""ИИ-стилист витрины «Сила в Стиле» на Yandex AI Studio (OpenAI-совместимый API, модель с пониманием фото).
+"""ИИ-стилист витрины «Сила в Стиле» на OpenAI API с пониманием фото.
 
-Ключ и папка — те же, что у бота Lumio: YANDEX_API_KEY, FOLDER_ID.
-  SVS_VLM_MODEL   модель, по умолчанию qwen3.6-35b-a3b (понимает фото; Gemma 3 в AI Studio больше нет)
-  SVS_STYLE_DAY   советов в день на покупателя, по умолчанию 30
+  OPENAI_API_KEY    ключ OpenAI из окружения процесса бота (обязательно)
+  SVS_OPENAI_MODEL  модель, по умолчанию gpt-5.4-mini (понимает фото)
+  SVS_STYLE_DAY     советов в день на покупателя, по умолчанию 30
+
+YANDEX_API_KEY, FOLDER_ID и SVS_VLM_MODEL этому модулю больше не нужны.
+Если они нужны другим частям бота, оставьте их в окружении.
+Файл .env должен загружаться основным приложением до импорта этого модуля
+или передаваться процессу через systemd/Docker/другой способ запуска.
 
 Что делает:
   describe(iid)        один раз описывает вещь по фото: тип, цвет, материал, стиль, сезон (хранится в каталоге)
   pairs(iid)           «С чем носить» — 2–3 вещи из каталога (кэш до изменения каталога)
   outfit(ids)          «Оценить образ» — сочетается ли, совет и замена из каталога
 """
-import base64
 import json
 import os
 import re
@@ -20,10 +24,9 @@ import requests
 
 import svs_bot as bot
 
-KEY = os.environ.get("YANDEX_API_KEY", "").strip()
-FOLDER = os.environ.get("FOLDER_ID", "").strip()
-MODEL = os.environ.get("SVS_VLM_MODEL", "qwen3.6-35b-a3b").strip()
-URL = "https://ai.api.cloud.yandex.net/v1/chat/completions"
+KEY = os.environ.get("OPENAI_API_KEY", "").strip()
+MODEL = os.environ.get("SVS_OPENAI_MODEL", "").strip() or "gpt-5.4-mini"
+URL = "https://api.openai.com/v1/chat/completions"
 PER_DAY = int(os.environ.get("SVS_STYLE_DAY", "30") or 30)
 _pairs_cache = {}
 _desc_lock = threading.Lock()
@@ -69,7 +72,7 @@ def conflict(titles):
 
 
 def ready():
-    return bool(KEY and FOLDER)
+    return bool(KEY)
 
 
 def _small(raw, side=768):
@@ -77,35 +80,56 @@ def _small(raw, side=768):
 
 
 def chat(content, max_tokens=500):
-    # Qwen3.6 сначала «думает»: просим не рассуждать (/no_think) и всё равно даём запас токенов
+    if not ready():
+        raise RuntimeError("Не задан OPENAI_API_KEY в окружении процесса бота")
     if isinstance(content, str):
         content = [{"type": "text", "text": content}]
-    content = [dict(c) for c in content]
-    for c in content:
-        if c.get("type") == "text":
-            c["text"] += "\n/no_think"
-            break
     t0 = time.time()
-    r = requests.post(URL, timeout=(10, 120), headers={"Authorization": f"Api-Key {KEY}"},
-                      json={"model": f"gpt://{FOLDER}/{MODEL}", "temperature": 0.3, "max_tokens": max(max_tokens, 4000),
-                            "messages": [{"role": "system", "content": STYLIST},
-                                         {"role": "user", "content": content}]})
-    j = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+    # JSON mode сохраняет контракт describe/pairs/outfit. Фото передаются как прежде.
+    # У gpt-5.4-mini reasoning по умолчанию none; temperature не передаём,
+    # чтобы не добавлять параметр, совместимость которого зависит от модели.
+    try:
+        r = requests.post(
+            URL, timeout=(10, 120),
+            headers={"Authorization": f"Bearer {KEY}", "Content-Type": "application/json"},
+            json={"model": MODEL, "max_completion_tokens": max(max_tokens, 1024),
+                  "response_format": {"type": "json_object"}, "store": False,
+                  "messages": [{"role": "system", "content": STYLIST},
+                               {"role": "user", "content": content}]},
+        )
+    except requests.Timeout:
+        raise RuntimeError("OpenAI: превышено время ожидания ответа") from None
+    except requests.RequestException:
+        raise RuntimeError("OpenAI: ошибка соединения, проверьте доступ сервера к api.openai.com") from None
+    try:
+        j = r.json()
+    except ValueError:
+        j = None
     if r.status_code != 200:
-        raise RuntimeError(f"Yandex AI {r.status_code}: {(j.get('error') or {}).get('message') or r.text[:300]}")
-    msg = j["choices"][0]["message"]
-    text = msg.get("content") or msg.get("reasoning_content") or ""   # пустой content = ответ съели рассуждения
-    if isinstance(text, list):
-        text = " ".join(p.get("text", "") for p in text if isinstance(p, dict))
-    text = re.sub(r"<think>.*?</think>", "", text, flags=re.S)
-    blocks = re.findall(r"\{(?:[^{}]|\{[^{}]*\})*\}", text, re.S)
-    for b in reversed(blocks):
-        try:
-            return json.loads(b)
-        except ValueError:
-            continue
-    raise RuntimeError(f"модель ответила не JSON за {time.time() - t0:.0f} с (finish={j['choices'][0].get('finish_reason')}, "
-                       f"tokens={j.get('usage', {}).get('completion_tokens')}): " + text[:300])
+        error = j.get("error") if isinstance(j, dict) else None
+        detail = error.get("message") if isinstance(error, dict) else None
+        # Ошибка авторизации может содержать часть ключа: убираем её из логов/probe.
+        detail = str(detail or "API вернул ошибку без JSON-описания").replace(KEY, "[скрыто]")
+        detail = re.sub(r"sk-[A-Za-z0-9_.*-]+", "[скрыто]", detail)
+        raise RuntimeError(f"OpenAI HTTP {r.status_code}: {detail[:300]}")
+    if not isinstance(j, dict) or not isinstance(j.get("choices"), list) or not j["choices"]:
+        raise RuntimeError("OpenAI: некорректный ответ API, нет choices")
+    choice = j["choices"][0]
+    msg = choice.get("message") if isinstance(choice, dict) else None
+    if not isinstance(msg, dict):
+        raise RuntimeError("OpenAI: некорректный ответ API, нет message")
+    if msg.get("refusal") or choice.get("finish_reason") == "content_filter":
+        raise RuntimeError("OpenAI: модель отклонила запрос")
+    if choice.get("finish_reason") == "length":
+        raise RuntimeError("OpenAI: ответ обрезан лимитом токенов; увеличьте max_tokens в chat()")
+    text = msg.get("content") or ""
+    try:
+        answer = json.loads(text)
+    except (ValueError, TypeError):
+        raise RuntimeError(f"OpenAI: модель ответила не JSON за {time.time() - t0:.0f} с") from None
+    if not isinstance(answer, dict):
+        raise RuntimeError("OpenAI: ожидался JSON-объект")
+    return answer
 
 
 def probe():
