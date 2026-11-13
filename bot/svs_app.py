@@ -54,8 +54,8 @@ def size_list(s):
     m = re.match(r"^\s*(\d{2})\s*[-–—]\s*(\d{2})\s*$", s or "")
     if m:
         a, b = int(m.group(1)), int(m.group(2))
-        if 30 <= a < b <= 70:
-            return [str(x) for x in range(a, b + 1, 2)]
+        if 30 <= a < b <= 70:   # одежда 46–60 — через 2; обувь 39–46 и джинсы 29–40 — подряд
+            return [str(x) for x in range(a, b + 1, 1 if b <= 46 else 2)]
     parts = [p.strip() for p in re.split(r"[,/;]", s or "") if p.strip()]
     if 1 < len(parts) <= 12 and all(len(p) <= 5 for p in parts):
         return parts
