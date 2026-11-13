@@ -10,7 +10,7 @@
 Каталог пополняется сам:
   • бот — администратор канала: каждый пост с фото и строкой «Цена …» становится вещью;
   • старые посты админ пересылает боту в личку — разбираются так же.
-Пост без цены или с аксессуаром (сумка, ремень, обувь…) пропускается.
+Добавляется каждый пост с фото; без строки «Цена …» — «цена по запросу». Убрать лишнее: /del N.
 Фото покупателя хранится только как file_id Telegram; удалить — /delete_photo.
 """
 import base64
@@ -32,10 +32,6 @@ DAILY = int(os.environ.get("SVS_DAILY_FREE", "3") or 3)
 ADMINS = {int(x) for x in re.findall(r"-?\d+", os.environ.get("SVS_ADMIN_IDS") or os.environ.get("ADMIN_CHAT_ID") or "")}
 STORE = os.path.join(seedream.DIR, "svs.json")
 PAGE = 5
-SKIP = re.compile(r"^(СУМК|РЮКЗАК|РЕМ(ЕНЬ|НИ)|КОШЕЛ|ПОРТМОНЕ|ОЧК|ЧАС[ЫО]|ДУХИ|ПАРФЮМ|ОБУВЬ|КРОССОВ|КЕД|ТУФЛ|ЛОФЕР|"
-                  r"МОКАСИН|БОТИН|САПОГ|СЛИП|ШЛЁП|ШЛЕП|ТАПК|КЕПК|ШАПК|БЕЙСБОЛК|ПАНАМ|ШАРФ|ПЕРЧАТ|ГАЛСТУК|ЗАПОНК|БРАСЛЕТ|"
-                  r"КОЛЬЦ|ЦЕП|ЗОНТ|ЧЕМОДАН|КЛАТЧ|БАРСЕТК|ВИЗИТНИЦ|ОБЛОЖК|БРЕЛОК|НОСК)", re.I)
-
 _lock = threading.Lock()
 _groups = {}            # media_group_id -> {"photo", "caption", "ts", "admin_chat"}
 _tryon_slots = threading.Semaphore(2)
@@ -126,34 +122,22 @@ def data_uri(raw, side=2048):
 
 # ---------------------------------------------------------------- разбор постов
 def parse(caption):
+    """Любой пост с фото становится вещью: название — первая строка, цена и размеры — если есть."""
     text = (caption or "").strip()
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    if not lines:
-        return None
     m = re.search(r"Цена\s*[-–—:]?\s*([\d][\d\s.,]*)\s*(₽|руб|р\b)?", text, re.I)
-    if not m:
-        return None
-    price = int(re.sub(r"\D", "", m.group(1)) or 0)
-    if not price:
-        return None
-    title = re.sub(r"[*_`]", "", lines[0])[:80]
-    if SKIP.match(title):
-        return {"skip": "аксессуар", "title": title}
+    price = int(re.sub(r"\D", "", m.group(1)) or 0) if m else 0
+    title = re.sub(r"[*_`]", "", lines[0])[:80] if lines else "Новинка"
     sz = re.search(r"Размер\w*\s*[-–—:]?\s*([^\n]+)", text, re.I)
     return {"title": title, "price": price, "sizes": (sz.group(1).strip() if sz else "")[:60]}
 
 
 def money(p):
-    return f"{p:,}".replace(",", " ") + " ₽"
+    return f"{p:,}".replace(",", " ") + " ₽" if p else "цена по запросу"
 
 
 def add_item(photo_id, caption, source, admin_chat=None):
     info = parse(caption)
-    if not info or info.get("skip"):
-        if admin_chat:
-            why = "это аксессуар — примерка только для одежды" if info else "в тексте нет строки «Цена …»"
-            send(admin_chat, f"Пропустил{(': ' + info['title']) if info else ''} — {why}.")
-        return None
     with _lock:
         db = _load()
         for k, v in db["items"].items():         # тот же пост ещё раз (правка/повторная пересылка) — обновляем
