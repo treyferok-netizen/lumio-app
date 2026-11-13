@@ -42,18 +42,26 @@ def _small(raw, side=768):
 
 
 def chat(content, max_tokens=500):
-    r = requests.post(URL, timeout=(10, 90), headers={"Authorization": f"Api-Key {KEY}"},
-                      json={"model": f"gpt://{FOLDER}/{MODEL}", "temperature": 0.3, "max_tokens": max_tokens,
+    # Qwen3.6 сначала «думает» — даём запас токенов, иначе ответ обрезается до JSON
+    r = requests.post(URL, timeout=(10, 120), headers={"Authorization": f"Api-Key {KEY}"},
+                      json={"model": f"gpt://{FOLDER}/{MODEL}", "temperature": 0.3, "max_tokens": max(max_tokens, 2500),
                             "messages": [{"role": "system", "content": STYLIST},
                                          {"role": "user", "content": content}]})
     j = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
     if r.status_code != 200:
         raise RuntimeError(f"Yandex AI {r.status_code}: {(j.get('error') or {}).get('message') or r.text[:300]}")
-    text = j["choices"][0]["message"]["content"]
-    m = re.search(r"\{.*\}", text, re.S)
-    if not m:
-        raise RuntimeError("модель ответила не JSON: " + text[:200])
-    return json.loads(m.group(0))
+    msg = j["choices"][0]["message"]
+    text = msg.get("content") or msg.get("reasoning_content") or ""   # пустой content = ответ съели рассуждения
+    if isinstance(text, list):
+        text = " ".join(p.get("text", "") for p in text if isinstance(p, dict))
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.S)
+    blocks = re.findall(r"\{(?:[^{}]|\{[^{}]*\})*\}", text, re.S)
+    for b in reversed(blocks):
+        try:
+            return json.loads(b)
+        except ValueError:
+            continue
+    raise RuntimeError(f"модель ответила не JSON (finish={j['choices'][0].get('finish_reason')}): " + text[:300])
 
 
 def probe():
