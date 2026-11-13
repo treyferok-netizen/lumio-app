@@ -33,6 +33,41 @@ STYLIST = ("Ты — стилист магазина премиальной му
            "и сезона, никогда не комментируй внешность человека. Отвечай строго JSON без пояснений вокруг.")
 
 
+# что занимает вещь на человеке: две вещи в одном «слоте» надеть нельзя
+SLOTS = [
+    (r"^КОСТЮМ|^КОМПЛЕКТ|^ТРОЙК|^ДВОЙК", {"top", "bottom"}, "костюм"),
+    (r"^(БРЮК|ДЖИНС|ШОРТ|ЧИНОС|КАРГО|ЮБК)", {"bottom"}, "брюки"),
+    (r"^(ЖИЛЕТ|ПИДЖАК|ЖАКЕТ|БЛЕЙЗЕР|КУРТК|БОМБЕР|ВЕТРОВК|ПАРК|ПУХОВИК|ПАЛЬТО|ПЛАЩ|ДУБЛ[ЁЕ]НК|ШУБ|ОВЕРШОТ|ТРЕНЧ|АНОРАК)",
+     {"outer"}, "верхняя одежда"),
+    (r"^(КРОССОВ|КЕД|ТУФЛ|ЛОФЕР|МОКАСИН|БОТИН|САПОГ|СЛИП|ДЕРБИ|ОКСФОРД|ЧЕЛСИ|САНДАЛ|ШЛ[ЁЕ]П)", {"shoes"}, "обувь"),
+]
+
+
+def slots(title):
+    t = (title or "").strip().upper()
+    for rx, sl, name in SLOTS:
+        if re.match(rx, t):
+            return sl, name
+    return set(), ""
+
+
+def conflict(titles):
+    """Текст ошибки, если в образе две вещи на одно место (два костюма, костюм + брюки, две пары обуви…)."""
+    seen = {}
+    for t in titles:
+        sl, name = slots(t)
+        for s_ in sl:
+            if s_ in seen:
+                a, b = seen[s_], t
+                if slots(a)[1] == name == "костюм":
+                    return f"В образе два костюма — {a} и {b}. Носится один, выберите, какой примерить."
+                if "костюм" in (slots(a)[1], name):
+                    return f"{a} и {b} не надеть вместе: в костюме уже есть брюки. Оставьте что-то одно."
+                return f"{a} и {b} — это две вещи одного типа ({name}). Для образа выберите одну."
+            seen[s_] = t
+    return None
+
+
 def ready():
     return bool(KEY and FOLDER)
 
@@ -150,7 +185,12 @@ def pairs(iid):
                  "\n\nПодбери 2–3 вещи из каталога, которые лучше всего дополнят её в один образ (разные типы вещей, "
                  "не две куртки). Верни JSON: {\"ids\": [\"номер\", …], \"text\": \"одно предложение, почему это "
                  "сочетается\"}"}], 300)
-    ids = [str(x) for x in ans.get("ids", []) if str(x) in db["items"] and str(x) != iid][:3]
+    ids = []
+    for x in ans.get("ids", []):            # без повторов типа: к костюму не предлагаем брюки и второй костюм
+        x = str(x)
+        if x in db["items"] and x != iid and not conflict([me["title"]] + [db["items"][i]["title"] for i in ids] + [db["items"][x]["title"]]):
+            ids.append(x)
+    ids = ids[:3]
     res = {"ok": True, "items": ids, "text": str(ans.get("text", ""))[:300]}
     _pairs_cache[key] = res
     return res
@@ -162,6 +202,9 @@ def outfit(ids):
     ids = [str(i) for i in ids if str(i) in db["items"]][:4]
     if len(ids) < 2:
         return {"ok": False, "error": "Отметьте хотя бы 2 вещи"}
+    clash = conflict([db["items"][i]["title"] for i in ids])
+    if clash:                                  # очевидное — без ИИ, бесплатно и мгновенно
+        return {"ok": True, "good": False, "verdict": "Так не носят", "tip": clash, "swap": None}
     for i in ids:
         describe(i)
     db = bot._load()
@@ -169,7 +212,8 @@ def outfit(ids):
     content = [{"type": "text", "text":
                 "Оцени образ из этих вещей (фото по порядку):\n" + "\n".join(_line(i, db["items"][i]) for i in ids) +
                 "\n\nДругие вещи каталога для возможной замены:\n" + ("\n".join(rest[:120]) or "—") +
-                "\n\nВерни JSON: {\"ok\": true если вещи хорошо сочетаются иначе false, "
+                "\n\nНазвание вещи важнее фото: «КОСТЮМ» — это комплект из верха и низа, даже если на фото видно "
+                "только кофту. Учитывай тип вещи из названия.\n\nВерни JSON: {\"ok\": true если вещи хорошо сочетаются иначе false, "
                 "\"verdict\": \"короткий итог, до 8 слов\", \"tip\": \"1–2 предложения: почему и как носить\", "
                 "\"swap_out\": \"номер вещи, которую лучше заменить, или null\", "
                 "\"swap_in\": \"номер вещи из каталога на замену, или null\"}"}]
