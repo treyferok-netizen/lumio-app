@@ -5,7 +5,7 @@ API (всё, что про покупателя, — с заголовком X-I
   GET  /svs/api/items            каталог
   GET  /svs/img/<id>.jpg         фото вещи
   GET  /svs/api/me               есть ли фото, сколько примерок осталось
-  GET  /svs/api/myphoto?init=…   своё фото (только владельцу)
+  GET  /svs/api/myphoto          своё фото (только владельцу)
   POST /svs/api/photo            загрузить фото (тело — JPEG)
   DELETE /svs/api/photo          удалить фото
   POST /svs/api/tryon            {"items": [id, …]} — до 3 вещей, примерка по цепочке
@@ -218,7 +218,7 @@ def handle(method, path, query, headers, body):
         return (200, "image/jpeg", raw) if raw else (404, "text/plain", b"")
     if method == "GET" and path == "/svs/api/items":
         return _js(200, {"ok": True, "items": items(), "manager": bot.MANAGER})
-    u = auth(headers.get("X-Init-Data") or qs.get("init"))
+    u = auth(headers.get("X-Init-Data"))
     if not u:
         return _js(401, {"ok": False, "error": "Откройте витрину из бота @sila_v_stile_bot"})
     uid = int(u["id"])

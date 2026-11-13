@@ -1,7 +1,7 @@
 """ИИ-стилист витрины «Сила в Стиле» на Yandex AI Studio (OpenAI-совместимый API, модель с пониманием фото).
 
 Ключ и папка — те же, что у бота Lumio: YANDEX_API_KEY, FOLDER_ID.
-  SVS_VLM_MODEL   модель, по умолчанию gemma-3-27b-it/latest (понимает фото)
+  SVS_VLM_MODEL   модель, по умолчанию qwen3.6-35b-a3b (понимает фото; Gemma 3 в AI Studio больше нет)
   SVS_STYLE_DAY   советов в день на покупателя, по умолчанию 30
 
 Что делает:
@@ -22,7 +22,7 @@ import svs_bot as bot
 
 KEY = os.environ.get("YANDEX_API_KEY", "").strip()
 FOLDER = os.environ.get("FOLDER_ID", "").strip()
-MODEL = os.environ.get("SVS_VLM_MODEL", "gemma-3-27b-it/latest").strip()
+MODEL = os.environ.get("SVS_VLM_MODEL", "qwen3.6-35b-a3b").strip()
 URL = "https://ai.api.cloud.yandex.net/v1/chat/completions"
 PER_DAY = int(os.environ.get("SVS_STYLE_DAY", "30") or 30)
 _pairs_cache = {}

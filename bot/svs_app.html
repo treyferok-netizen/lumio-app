@@ -207,9 +207,17 @@ async function init(){
   if (!INIT) toast("Откройте витрину из бота @sila_v_stile_bot, чтобы примерять");
 }
 
-function renderMe(){
+let MYURL = "";
+async function myPhotoUrl(){
+  if (MYURL) return MYURL;
+  const r = await fetch("/svs/api/myphoto", {headers: {"X-Init-Data": INIT}});
+  if (!r.ok) return "";
+  MYURL = URL.createObjectURL(await r.blob()); return MYURL;
+}
+async function renderMe(){
   $("hint").hidden = !!ME.has_photo || !INIT;
-  $("meBtn").innerHTML = ME.has_photo ? `<img src="/svs/api/myphoto?init=${encodeURIComponent(INIT)}&t=${Date.now()}" alt="">` : "👤";
+  if (!ME.has_photo){ $("meBtn").innerHTML = "👤"; return; }
+  const u = await myPhotoUrl(); $("meBtn").innerHTML = u ? `<img src="${u}" alt="">` : "👤";
 }
 function renderChips(){
   const cats = ["Все", ...new Set(ITEMS.map(x=>x.cat))];
@@ -368,7 +376,7 @@ $("file").onchange = async () => {
     const blob = await shrink(f, 1600);
     const r = await api("/svs/api/photo", {method:"POST", headers:{"Content-Type":"image/jpeg"}, body: blob});
     if (!r.ok) return toast(r.error || "Не удалось загрузить фото");
-    ME.has_photo = true; renderMe(); toast("Фото сохранено ✓"); haptic("medium");
+    ME.has_photo = true; MYURL = ""; renderMe(); toast("Фото сохранено ✓"); haptic("medium");
     if ($("photoSheet").classList.contains("open")) openPhoto();
     if (afterPhoto){ const ids = afterPhoto; afterPhoto = null; tryItems(ids); }
   } catch(e){ toast("Не удалось обработать фото"); }
@@ -385,13 +393,13 @@ function shrink(file, side){
 }
 function openPhoto(){
   $("myImg").hidden = !ME.has_photo; $("delPhoto").hidden = !ME.has_photo;
-  if (ME.has_photo) $("myImg").src = `/svs/api/myphoto?init=${encodeURIComponent(INIT)}&t=${Date.now()}`;
+  if (ME.has_photo) myPhotoUrl().then(u => { if (u) $("myImg").src = u; });
   openSheet("photoSheet");
 }
 $("meBtn").onclick = () => INIT ? openPhoto() : toast("Откройте витрину из бота @sila_v_stile_bot");
 async function deletePhoto(){
   const r = await api("/svs/api/photo", {method:"DELETE"});
-  if (r.ok){ ME.has_photo = false; renderMe(); closeSheets(); toast("Фото удалено"); }
+  if (r.ok){ ME.has_photo = false; MYURL = ""; renderMe(); closeSheets(); toast("Фото удалено"); }
 }
 
 async function rateOutfit(){
