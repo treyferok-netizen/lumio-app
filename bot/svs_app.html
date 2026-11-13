@@ -77,6 +77,24 @@ textarea{width:100%;background:var(--card);color:var(--text);border:1px solid va
 .bar i{display:block;height:100%;background:var(--accent);width:0;transition:width .6s}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#222;border:1px solid var(--line);padding:10px 16px;border-radius:12px;font-size:13px;z-index:50;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90%;text-align:center}
 .toast.show{opacity:1}
+.style-h{display:flex;align-items:center;gap:8px;margin:22px 0 10px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.style-h b{color:var(--accent);font-weight:600}
+.pairs{display:flex;gap:10px;overflow-x:auto;scrollbar-width:none;padding-bottom:4px}
+.pairs::-webkit-scrollbar{display:none}
+.mini{flex:none;width:132px;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.mini .ph{aspect-ratio:3/4}
+.mini .info{padding:8px}
+.mini .t{font-size:11px}
+.mini .p{font-size:12px}
+.stxt{font-size:13px;color:var(--muted);margin:10px 0 0;line-height:1.45}
+.skel{height:14px;border-radius:6px;background:linear-gradient(90deg,#1b1b1e,#242428,#1b1b1e);background-size:200% 100%;animation:sk 1.2s infinite}
+@keyframes sk{to{background-position:-200% 0}}
+.verdict{border:1px solid var(--line);background:var(--card);border-radius:var(--radius);padding:14px;margin:4px 0 12px}
+.verdict .v{font-weight:700;margin-bottom:6px}
+.verdict.good{border-color:#3d5a3a}.verdict.warn{border-color:#6b5328}
+.swap{display:flex;gap:10px;align-items:center;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.swap img{width:48px;height:64px;object-fit:cover;border-radius:8px}
+.swap .m{flex:1;font-size:12px}
 .cartbar{position:fixed;left:12px;right:12px;bottom:calc(14px + env(safe-area-inset-bottom));z-index:10;display:none}
 .cartbar.show{display:block}
 .cartbar .btn{box-shadow:0 8px 30px rgba(0,0,0,.5)}
@@ -110,6 +128,11 @@ textarea{width:100%;background:var(--card);color:var(--text);border:1px solid va
     <button class="btn gold" onclick="tryItems([cur.id])">👕 Примерить на себя</button>
     <button class="btn ghost" id="itCartBtn" onclick="toggleCart(cur.id, true)"></button>
   </div>
+  <div id="styleBox" hidden>
+    <div class="style-h"><b>✦</b> С чем носить</div>
+    <div class="pairs" id="pairs"></div>
+    <div class="stxt" id="pairsTxt"></div>
+  </div>
 </div></section>
 
 <!-- корзина -->
@@ -118,7 +141,9 @@ textarea{width:100%;background:var(--card);color:var(--text);border:1px solid va
   <div class="note">Отметьте галочкой до <b id="maxN">3</b> вещей — и примерьте образ целиком.</div>
   <div id="cartList"></div>
   <div class="total"><span>Итого</span><span id="cartTotal"></span></div>
+  <div id="verdict"></div>
   <div class="stack">
+    <button class="btn ghost" id="rateBtn" onclick="rateOutfit()" hidden>✦ Оценить образ — стилист</button>
     <button class="btn gold" id="tryOutfitBtn" onclick="tryItems(checked())"></button>
     <textarea id="comment" placeholder="Комментарий к заказу (необязательно)"></textarea>
     <button class="btn ghost" onclick="sendOrder()">Оформить заказ</button>
@@ -228,7 +253,30 @@ function openItem(id){
     openItem(id); renderGrid(); renderCartBar(); haptic();
   });
   $("itCartBtn").textContent = CART[id] ? "✓ В корзине — убрать" : "В корзину";
-  openSheet("itemSheet");
+  if (!openItem.keep) openSheet("itemSheet");
+  loadPairs(id);
+}
+const PAIRS = {};
+async function loadPairs(id){
+  if (!INIT || ITEMS.length < 3){ $("styleBox").hidden = true; return; }
+  $("styleBox").hidden = false;
+  const draw = r => {
+    if (cur.id !== id) return;
+    if (!r || !r.ok || !(r.items||[]).length){ $("styleBox").hidden = true; return; }
+    $("pairs").innerHTML = r.items.map(pid=>{ const x = ITEMS.find(i=>i.id===pid); if(!x) return "";
+      return `<div class="mini"><div class="ph" data-go="${x.id}"><img loading="lazy" src="${x.img}" alt="">
+        <button class="add ${CART[x.id]?"on":""}" data-padd="${x.id}">${CART[x.id]?"✓":"+"}</button></div>
+        <div class="info" data-go="${x.id}"><div class="t">${esc(x.title)}</div><div class="p">${money(x.price)}</div></div></div>`; }).join("");
+    $("pairsTxt").textContent = r.text || "";
+    $("pairs").onclick = e => { const a = e.target.closest("[data-padd]"), g = e.target.closest("[data-go]");
+      if (a){ toggleCart(a.dataset.padd); draw(r); return; } if (g) openItem(g.dataset.go); };
+  };
+  if (PAIRS[id]) return draw(PAIRS[id]);
+  $("pairs").innerHTML = [1,2,3].map(()=>`<div class="mini"><div class="ph"></div><div class="info"><div class="skel"></div></div></div>`).join("");
+  $("pairsTxt").textContent = "Стилист подбирает…";
+  const r = await api("/svs/api/style/pairs", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({id})});
+  if (r.ok) PAIRS[id] = r;
+  draw(r);
 }
 function toggleCart(id, fromSheet){
   if (CART[id]) delete CART[id];
@@ -259,6 +307,9 @@ function openCart(){
   const sum = ids.reduce((s,id)=>s+((ITEMS.find(x=>x.id===id)||{}).price||0),0);
   $("cartTotal").textContent = money(sum);
   const n = checked().length;
+  $("rateBtn").hidden = n < 2 || !INIT;
+  if (!openCart.keepVerdict) $("verdict").innerHTML = "";
+  openCart.keepVerdict = false;
   $("tryOutfitBtn").disabled = !n;
   $("tryOutfitBtn").textContent = n > 1 ? `👕 Примерить образ (${n})` : n ? "👕 Примерить на себя" : "Отметьте вещи для примерки";
   openSheet("cartSheet");
@@ -341,6 +392,26 @@ $("meBtn").onclick = () => INIT ? openPhoto() : toast("Откройте витр
 async function deletePhoto(){
   const r = await api("/svs/api/photo", {method:"DELETE"});
   if (r.ok){ ME.has_photo = false; renderMe(); closeSheets(); toast("Фото удалено"); }
+}
+
+async function rateOutfit(){
+  const ids = checked(); if (ids.length < 2) return;
+  haptic();
+  $("verdict").innerHTML = `<div class="verdict"><div class="skel" style="width:60%;margin-bottom:10px"></div><div class="skel"></div></div>`;
+  const r = await api("/svs/api/style/outfit", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({items: ids})});
+  if (!r.ok){ $("verdict").innerHTML = `<div class="verdict">${esc(r.error||"Стилист недоступен")}</div>`; return; }
+  let swap = "";
+  if (r.swap){ const o = ITEMS.find(x=>x.id===r.swap.out), n = ITEMS.find(x=>x.id===r.swap.in);
+    if (o && n) swap = `<div class="swap"><img src="${n.img}" alt=""><div class="m">Заменить <b>${esc(o.title)}</b> на <b>${esc(n.title)}</b> — ${money(n.price)}</div>
+      <button class="btn gold sm" style="padding:0 12px;margin:0" onclick="doSwap('${o.id}','${n.id}')">Заменить</button></div>`; }
+  $("verdict").innerHTML = `<div class="verdict ${r.good?"good":"warn"}"><div class="v">${r.good?"✅":"⚠️"} ${esc(r.verdict||"")}</div>
+    <div class="stxt" style="margin:0">${esc(r.tip||"")}</div>${swap}</div>`;
+  haptic(r.good ? "light" : "medium");
+}
+function doSwap(out, inn){
+  const was = CART[out] || {check:true};
+  delete CART[out]; CART[inn] = {size:"", check: was.check}; save();
+  renderGrid(); renderCartBar(); openCart.keepVerdict = false; openCart(); toast("Заменено — можно примерить образ");
 }
 
 async function sendOrder(){

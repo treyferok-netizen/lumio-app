@@ -741,6 +741,16 @@ def _call(name, args, host):
         return _image_result(_save(data, "png" if ctype == "image/png" else "jpg"), host, "Сохранено.")
     if name == "kling_upload":
         return kling_upload(args)
+    if name == "svs_style_probe":  # проверка ИИ-стилиста (Yandex AI Studio); args.id — описать вещь
+        import svs_stylist
+        out = svs_stylist.probe()
+        if out.get("ok") and args.get("id"):
+            out["describe"] = svs_stylist.describe(args["id"])
+            if args.get("pairs"):
+                out["pairs"] = svs_stylist.pairs(args["id"])
+        if out.get("ok") and args.get("outfit"):
+            out["outfit"] = svs_stylist.outfit(args["outfit"])
+        return _text(json.dumps(out, ensure_ascii=False))
     if name == "svs_status":  # бот-примерочная «Сила в Стиле»
         import svs_bot
         return _text(json.dumps(svs_bot.status(), ensure_ascii=False))

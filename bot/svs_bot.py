@@ -442,3 +442,5 @@ def start():
         return
     threading.Thread(target=poll, daemon=True).start()
     threading.Thread(target=flush_groups, daemon=True).start()
+    import svs_stylist
+    svs_stylist.start()

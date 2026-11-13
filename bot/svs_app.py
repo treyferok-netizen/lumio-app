@@ -11,6 +11,8 @@ API (всё, что про покупателя, — с заголовком X-I
   POST /svs/api/tryon            {"items": [id, …]} — до 3 вещей, примерка по цепочке
   GET  /svs/api/job/<id>         статус примерки
   POST /svs/api/order            {"items": [{"id", "size"}], "comment"}
+  POST /svs/api/style/pairs      {"id"} — «С чем носить» (ИИ-стилист, svs_stylist.py)
+  POST /svs/api/style/outfit     {"items": [id, …]} — «Оценить образ»
 """
 import hashlib
 import hmac
@@ -24,6 +26,7 @@ import urllib.parse
 
 import fashn
 import svs_bot as bot
+import svs_stylist as stylist
 
 HTML = os.path.join(os.path.dirname(os.path.abspath(__file__)), "svs_app.html")
 MAX_ITEMS = 3
@@ -242,6 +245,19 @@ def handle(method, path, query, headers, body):
         if not job or job["uid"] != uid:
             return _js(404, {"ok": False, "error": "Примерка не найдена"})
         return _js(200, {"ok": True, **{k: job.get(k) for k in ("status", "step", "total", "result", "error", "titles")}})
+    if method == "POST" and path in ("/svs/api/style/pairs", "/svs/api/style/outfit"):
+        if not stylist.ready():
+            return _js(503, {"ok": False, "error": "Стилист пока не подключён"})
+        data = json.loads(body or b"{}")
+        if path.endswith("/pairs"):           # «С чем носить» кэшируется — лимит не тратим на повторы
+            return _js(200, stylist.pairs(data.get("id")))
+        if not stylist.allowed(uid):
+            return _js(429, {"ok": False, "error": "На сегодня советов достаточно — загляните завтра 🙂"})
+        try:
+            return _js(200, stylist.outfit(data.get("items") or []))
+        except Exception as e:
+            print("svs stylist error", repr(e)[:300], flush=True)
+            return _js(502, {"ok": False, "error": "Стилист сейчас недоступен, попробуйте позже"})
     if method == "POST" and path == "/svs/api/order":
         return order(u, json.loads(body or b"{}"))
     return _js(404, {"ok": False, "error": "not found"})
