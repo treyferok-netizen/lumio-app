@@ -42,9 +42,17 @@ def _small(raw, side=768):
 
 
 def chat(content, max_tokens=500):
-    # Qwen3.6 сначала «думает» — даём запас токенов, иначе ответ обрезается до JSON
+    # Qwen3.6 сначала «думает»: просим не рассуждать (/no_think) и всё равно даём запас токенов
+    if isinstance(content, str):
+        content = [{"type": "text", "text": content}]
+    content = [dict(c) for c in content]
+    for c in content:
+        if c.get("type") == "text":
+            c["text"] += "\n/no_think"
+            break
+    t0 = time.time()
     r = requests.post(URL, timeout=(10, 120), headers={"Authorization": f"Api-Key {KEY}"},
-                      json={"model": f"gpt://{FOLDER}/{MODEL}", "temperature": 0.3, "max_tokens": max(max_tokens, 2500),
+                      json={"model": f"gpt://{FOLDER}/{MODEL}", "temperature": 0.3, "max_tokens": max(max_tokens, 4000),
                             "messages": [{"role": "system", "content": STYLIST},
                                          {"role": "user", "content": content}]})
     j = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
@@ -61,7 +69,8 @@ def chat(content, max_tokens=500):
             return json.loads(b)
         except ValueError:
             continue
-    raise RuntimeError(f"модель ответила не JSON (finish={j['choices'][0].get('finish_reason')}): " + text[:300])
+    raise RuntimeError(f"модель ответила не JSON за {time.time() - t0:.0f} с (finish={j['choices'][0].get('finish_reason')}, "
+                       f"tokens={j.get('usage', {}).get('completion_tokens')}): " + text[:300])
 
 
 def probe():

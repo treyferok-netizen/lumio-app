@@ -250,13 +250,17 @@ def handle(method, path, query, headers, body):
             return _js(503, {"ok": False, "error": "Стилист пока не подключён"})
         data = json.loads(body or b"{}")
         if path.endswith("/pairs"):           # «С чем носить» кэшируется — лимит не тратим на повторы
-            return _js(200, stylist.pairs(data.get("id")))
+            try:
+                return _js(200, stylist.pairs(data.get("id")))
+            except Exception as e:
+                print("svs stylist error", repr(e)[:400], flush=True)
+                return _js(502, {"ok": False, "error": "Стилист сейчас недоступен"})
         if not stylist.allowed(uid):
             return _js(429, {"ok": False, "error": "На сегодня советов достаточно — загляните завтра 🙂"})
         try:
             return _js(200, stylist.outfit(data.get("items") or []))
         except Exception as e:
-            print("svs stylist error", repr(e)[:300], flush=True)
+            print("svs stylist error", repr(e)[:400], flush=True)
             return _js(502, {"ok": False, "error": "Стилист сейчас недоступен, попробуйте позже"})
     if method == "POST" and path == "/svs/api/order":
         return order(u, json.loads(body or b"{}"))
