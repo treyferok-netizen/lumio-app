@@ -759,6 +759,15 @@ def _call(name, args, host):
         return disk_status(args)
     if name == "files_cleanup":
         return files_cleanup(args)
+    if name == "page_text":  # прочитать страницу по ссылке с сервера (для сайтов, которые не открываются у Claude)
+        r = requests.get(args.get("url", ""), timeout=(10, 60), headers={"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1"})
+        body = r.text
+        find = args.get("find")
+        if find:
+            i = body.find(find)
+            body = body[max(0, i - 200):] if i >= 0 else "(не найдено) " + body
+        start = int(args.get("offset") or 0)
+        return _text(f"HTTP {r.status_code}, {len(r.text)} символов, финальный адрес {r.url}\n" + body[start:start + int(args.get("limit") or 20000)])
     if name == "recent_files":  # последние файлы на сервере — найти результат, если ответ потерялся
         n = int(args.get("n") or 10)
         items = sorted((f for f in os.listdir(GEN_DIR) if not f.startswith(".")),
