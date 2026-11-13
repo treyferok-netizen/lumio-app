@@ -31,6 +31,9 @@ MANAGER = os.environ.get("SVS_MANAGER", "romanov_roman_svs").lstrip("@")
 DAILY = int(os.environ.get("SVS_DAILY_FREE", "3") or 3)
 ADMINS = {int(x) for x in re.findall(r"-?\d+", os.environ.get("SVS_ADMIN_IDS") or os.environ.get("ADMIN_CHAT_ID") or "")}
 STORE = os.path.join(seedream.DIR, "svs.json")
+UDIR = os.path.join(seedream.DIR, "svs_users")          # фото покупателей — не публичные
+IDIR = os.path.join(seedream.DIR, "svs_items")          # кэш фото вещей для витрины
+APP_URL = os.environ.get("SVS_APP_URL", "").strip() or (os.environ.get("PUBLIC_BASE", "https://212-87-223-41.sslip.io").rstrip("/") + "/svs/")
 PAGE = 5
 _lock = threading.Lock()
 _groups = {}            # media_group_id -> {"photo", "caption", "ts", "admin_chat"}
@@ -86,6 +89,10 @@ def btn(text, data=None, url=None, style=None):
     return b
 
 
+def app_btn(text="🛍 Открыть витрину"):
+    return {"text": text, "web_app": {"url": APP_URL}, "style": "success"}
+
+
 def kb(*rows):
     return {"inline_keyboard": [list(r) for r in rows]}
 
@@ -120,6 +127,48 @@ def data_uri(raw, side=2048):
     return "data:image/jpeg;base64," + base64.b64encode(raw).decode()
 
 
+def photo_path(uid):
+    return os.path.join(UDIR, f"{int(uid)}.jpg")
+
+
+def save_user_photo(uid, raw):
+    os.makedirs(UDIR, mode=0o700, exist_ok=True)
+    with open(photo_path(uid), "wb") as f:
+        f.write(raw)
+
+
+def user_photo(uid):
+    """Байты фото покупателя или None."""
+    try:
+        with open(photo_path(uid), "rb") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def drop_user_photo(uid):
+    try:
+        os.remove(photo_path(uid))
+    except OSError:
+        pass
+
+
+def item_image(iid):
+    """Фото вещи для витрины: кэш на диске, при первом запросе — из Telegram."""
+    p = os.path.join(IDIR, f"{int(iid)}.jpg")
+    if os.path.isfile(p):
+        with open(p, "rb") as f:
+            return f.read()
+    it = _load()["items"].get(str(iid))
+    if not it:
+        return None
+    raw = file_bytes(it["photo"])
+    os.makedirs(IDIR, exist_ok=True)
+    with open(p, "wb") as f:
+        f.write(raw)
+    return raw
+
+
 # ---------------------------------------------------------------- разбор постов
 def parse(caption):
     """Вещь = пост с фото и строкой «Цена …» (любая категория). Без цены — не товар (розыгрыш, новость)."""
@@ -151,6 +200,10 @@ def add_item(photo_id, caption, source, admin_chat=None):
                 v.update(info, photo=photo_id, source=source)
                 _save(db)
                 iid = k
+                try:
+                    os.remove(os.path.join(IDIR, f"{int(k)}.jpg"))   # фото могло смениться
+                except OSError:
+                    pass
                 break
         else:
             iid = str(int(max([0] + [int(k) for k in db["items"]])) + 1)
@@ -199,14 +252,13 @@ def flush_groups():
 
 # ---------------------------------------------------------------- покупатель
 WELCOME = ("👋 Это примерочная <b>Сила в Стиле</b>.\n\n"
-           "1. Пришлите своё фото в полный рост — лучше при хорошем свете, руки чуть в стороны.\n"
-           "2. Откройте каталог и нажмите «Примерить» на любой вещи.\n"
-           "Через 15–20 секунд увидите себя в ней.\n\n"
+           "Откройте витрину, загрузите своё фото в полный рост и примерьте любую вещь — "
+           "или соберите образ из нескольких и примерьте его целиком.\n\n"
            "Фото используется только для примерки. Удалить его: /delete_photo")
 
 
 def user(db, uid):
-    u = db["users"].setdefault(str(uid), {"photo": None, "day": "", "used": 0})
+    u = db["users"].setdefault(str(uid), {"day": "", "used": 0})
     today = time.strftime("%Y-%m-%d")
     if u["day"] != today:
         u["day"], u["used"] = today, 0
@@ -235,14 +287,13 @@ def try_on(chat, uid, iid, name):
         u = user(db, uid)
         if not it:
             return send(chat, "Эта вещь уже снята с продажи.")
-        if not u["photo"]:
+        if not user_photo(uid):
             return send(chat, "Сначала пришлите своё фото в полный рост — одним сообщением, как обычное фото.")
         if uid not in ADMINS and u["used"] >= DAILY:
             return send(chat, f"Сегодня вы уже сделали {DAILY} примерки. Новые будут доступны завтра 🙌\n"
                               f"Понравилась вещь? Напишите @{MANAGER}")
         u["used"] += 1
         _save(db)
-        photo = u["photo"]
     if not fashn.ready():
         return send(chat, "Примерочная настраивается, попробуйте чуть позже.")
     send(chat, f"Примеряю <b>{it['title']}</b>… это займёт 15–20 секунд ⏳")
@@ -255,7 +306,7 @@ def try_on(chat, uid, iid, name):
                           "and anything worn under the garment on the mannequin. Keep the person's face, body, pose, "
                           "background and their other clothes unchanged.")
                 outs, used, secs = fashn.run("tryon-max", {
-                    "model_image": data_uri(file_bytes(photo)), "product_image": data_uri(file_bytes(it["photo"])),
+                    "model_image": data_uri(user_photo(uid)), "product_image": data_uri(item_image(iid)),
                     "prompt": prompt, "resolution": "1k", "generation_mode": "fast", "output_format": "jpeg"})
                 if not outs:
                     raise RuntimeError("пустой ответ")
@@ -341,20 +392,18 @@ def on_update(upd):
     if is_admin and text.startswith(("/items", "/del", "/stats")):
         return admin_cmd(chat, text)
     if text.startswith("/start"):
-        return send(chat, WELCOME, reply_markup=kb([btn("👕 Открыть каталог", "cat", style="success")]))
+        return send(chat, WELCOME, reply_markup=kb([app_btn()], [btn("Каталог в чате", "cat")]))
     if text.startswith(("/catalog", "Каталог")):
         return show_catalog(chat)
     if text.startswith("/delete_photo"):
-        with _lock:
-            db = _load()
-            user(db, uid)["photo"] = None
-            _save(db)
+        drop_user_photo(uid)
         return send(chat, "Ваше фото удалено.")
     if msg.get("photo") or (msg.get("document") or {}).get("mime_type", "").startswith("image/"):
         fid = (msg["photo"][-1]["file_id"] if msg.get("photo") else msg["document"]["file_id"])
+        save_user_photo(uid, file_bytes(fid))
         with _lock:
             db = _load()
-            user(db, uid)["photo"] = fid
+            user(db, uid)
             _save(db)
         return send(chat, "Фото сохранено ✅ Теперь выберите вещь и нажмите «Примерить на себя».",
                     reply_markup=kb([btn("👕 Открыть каталог", "cat", style="success")]))
@@ -364,6 +413,7 @@ def on_update(upd):
 
 def poll():
     tg("deleteWebhook", {"drop_pending_updates": False})
+    tg("setChatMenuButton", {"menu_button": {"type": "web_app", "text": "Витрина", "web_app": {"url": APP_URL}}})
     tg("setMyCommands", {"commands": [{"command": "catalog", "description": "Каталог и примерка"},
                                       {"command": "start", "description": "Как пользоваться"},
                                       {"command": "delete_photo", "description": "Удалить моё фото"}]})

@@ -17,6 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import ads
 import index
 import mcp_server
+import svs_app
 import svs_bot
 import vk_bot
 
@@ -94,6 +95,27 @@ class Web(BaseHTTPRequestHandler):
         if body:
             self.wfile.write(body)
 
+    # ------------------------------------------------ витрина «Сила в Стиле» (/svs)
+    def _svs(self, method):
+        path, _, query = self.path.partition("?")
+        n = int(self.headers.get("Content-Length") or 0)
+        if n > MAX_BODY:
+            return self._raw(413)
+        body = self.rfile.read(n) if n else b""
+        try:
+            code, ctype, data = svs_app.handle(method, path, query, self.headers, body)
+        except (ValueError, KeyError) as e:
+            code, ctype, data = 400, "application/json", json.dumps({"ok": False, "error": str(e)[:200]}).encode()
+        except Exception as e:
+            print("svs app error", repr(e)[:300], flush=True)
+            code, ctype, data = 500, "application/json", b'{"ok":false,"error":"server"}'
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "public, max-age=86400" if path.startswith("/svs/img/") else "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
     # ------------------------------------------------ кабинет рекламы (/cabinet)
     def _cab_ok(self):
         for part in (self.headers.get("Cookie") or "").split(";"):
@@ -156,6 +178,8 @@ class Web(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = self.path.partition("?")[0]
+        if path.startswith("/svs"):
+            return self._svs("POST")
         if path.startswith("/cabinet"):
             return self._cabinet("POST")
         if path.startswith("/mcp/"):
@@ -174,10 +198,14 @@ class Web(BaseHTTPRequestHandler):
         self._send(index.handler(ev, CTX))
 
     def do_DELETE(self):
+        if self.path.startswith("/svs/"):
+            return self._svs("DELETE")
         self._raw(405 if self.path.startswith("/mcp/") else 404)
 
     def do_GET(self):
         path = self.path.partition("?")[0]
+        if path.startswith("/svs"):
+            return self._svs("GET")
         if path.startswith("/cabinet"):
             return self._cabinet("GET")
         if path.startswith("/.well-known/"):
