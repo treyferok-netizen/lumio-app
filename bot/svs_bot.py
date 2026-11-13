@@ -10,7 +10,7 @@
 Каталог пополняется сам:
   • бот — администратор канала: каждый пост с фото и строкой «Цена …» становится вещью;
   • старые посты админ пересылает боту в личку — разбираются так же.
-Добавляется каждый пост с фото; без строки «Цена …» — «цена по запросу». Убрать лишнее: /del N.
+Добавляется каждый пост с фото и ценой (одежда, сумки, обувь — всё). Без цены — пропуск. Убрать: /del N.
 Фото покупателя хранится только как file_id Telegram; удалить — /delete_photo.
 """
 import base64
@@ -122,11 +122,13 @@ def data_uri(raw, side=2048):
 
 # ---------------------------------------------------------------- разбор постов
 def parse(caption):
-    """Любой пост с фото становится вещью: название — первая строка, цена и размеры — если есть."""
+    """Вещь = пост с фото и строкой «Цена …» (любая категория). Без цены — не товар (розыгрыш, новость)."""
     text = (caption or "").strip()
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     m = re.search(r"Цена\s*[-–—:]?\s*([\d][\d\s.,]*)\s*(₽|руб|р\b)?", text, re.I)
     price = int(re.sub(r"\D", "", m.group(1)) or 0) if m else 0
+    if not price:
+        return None
     title = re.sub(r"[*_`]", "", lines[0])[:80] if lines else "Новинка"
     sz = re.search(r"Размер\w*\s*[-–—:]?\s*([^\n]+)", text, re.I)
     return {"title": title, "price": price, "sizes": (sz.group(1).strip() if sz else "")[:60]}
@@ -138,6 +140,10 @@ def money(p):
 
 def add_item(photo_id, caption, source, admin_chat=None):
     info = parse(caption)
+    if not info:
+        if admin_chat:
+            send(admin_chat, "Не добавил: в посте нет строки «Цена …».")
+        return None
     with _lock:
         db = _load()
         for k, v in db["items"].items():         # тот же пост ещё раз (правка/повторная пересылка) — обновляем
