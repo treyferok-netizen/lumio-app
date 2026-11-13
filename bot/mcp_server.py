@@ -7,6 +7,7 @@
   MCP_SECRET            секретная часть адреса (без неё коннектор выключен)
   SEEDREAM_API_KEY      ключ BytePlus ModelArk (в чат не присылать)
   SEEDREAM_MODEL / SEEDREAM_BASE / SEEDREAM_DAILY_LIMIT — как в seedream.py
+  FASHN_API_KEY         ключ FASHN (примерка одежды, см. fashn.py)
   PUBLIC_BASE           внешний адрес сервера, напр. https://212-87-223-41.sslip.io (по умолчанию берётся из запроса)
 
 Протокол: MCP Streamable HTTP, ответы обычным JSON (без SSE). Генерация — строго одна за раз.
@@ -299,6 +300,48 @@ def eleven_tool(name, args, host):
                                                   speed=float(args.get("speed", 1.0))),
                          args.get("name"), host)
     return _err("Нет такого инструмента: " + name)
+
+
+def _img_input(u):
+    """Наши файлы отдаём в FASHN сжатыми внутри запроса (data URI), чужие ссылки — как есть."""
+    own = file_path(u.rsplit("/files/", 1)[-1]) if "/files/" in u else None
+    if not own:
+        return u
+    with open(own, "rb") as f:
+        data, mime = _shrink(f.read(), "image/jpeg", side=2048)
+    return "data:%s;base64,%s" % (mime, base64.b64encode(data).decode())
+
+
+def fashn_tool(name, args, host):
+    import fashn
+    if not fashn.ready():
+        return _err("На сервере нет ключа FASHN: read -s K; lumio-set FASHN_API_KEY \"$K\"")
+    if name == "fashn_credits":
+        return _text(json.dumps(fashn.credits(), ensure_ascii=False))
+    person, garment = args.get("model_image") or "", args.get("garment_image") or ""
+    if not (person.startswith("http") and garment.startswith("http")):
+        return _err("Нужны model_image и garment_image — ссылки http(s).")
+    model = args.get("model") or "tryon-max"
+    if model == "tryon-v1.6":
+        inputs = {"model_image": _img_input(person), "garment_image": _img_input(garment),
+                  "category": args.get("category") or "auto"}
+    else:
+        inputs = {"model_image": _img_input(person), "product_image": _img_input(garment),
+                  "resolution": args.get("resolution") or "1k",
+                  "generation_mode": args.get("generation_mode") or "fast", "output_format": "jpeg"}
+        if args.get("prompt"):
+            inputs["prompt"] = args["prompt"]
+    if not _busy.acquire(blocking=False):
+        return _err("Уже идёт платная генерация (одна за раз).")
+    try:
+        outs, used, secs = fashn.run(model, inputs)
+    finally:
+        _busy.release()
+    if not outs:
+        return _err("FASHN вернул пустой результат.")
+    data, ctype = _fetch(outs[0])
+    saved = _save(data, "png" if ctype == "image/png" else "jpg")
+    return _image_result(saved, host, f"Примерка готова ({model}, {secs:.0f} с, кредитов: {used}).")
 
 
 def frame_tool(args, host):
@@ -665,6 +708,18 @@ TOOLS = [
          "prefixes": {"type": "array", "items": {"type": "string"}},
          "keep_prefixes": {"type": "array", "items": {"type": "string"}},
          "confirm": {"type": "string"}}}},
+    {"name": "fashn_tryon",
+     "description": "Виртуальная примерка FASHN (платно, одна за раз, только с согласия пользователя): надеть вещь с фото garment_image "
+                    "на человека с фото model_image. model: tryon-max (по умолчанию; resolution 1k/2k/4k, generation_mode fast/balanced/quality, "
+                    "fast 1k = 1 кредит) или tryon-v1.6 (category auto/tops/bottoms/one-pieces). Возвращает превью и ссылку на результат.",
+     "inputSchema": {"type": "object", "properties": {
+         "model_image": {"type": "string"}, "garment_image": {"type": "string"},
+         "model": {"type": "string"}, "prompt": {"type": "string"}, "resolution": {"type": "string"},
+         "generation_mode": {"type": "string"}, "category": {"type": "string"}},
+         "required": ["model_image", "garment_image"]}},
+    {"name": "fashn_credits",
+     "description": "Остаток кредитов FASHN API. Бесплатно.",
+     "inputSchema": {"type": "object", "properties": {}}},
     {"name": "seedream_status",
      "description": "Подключён ли ключ, модель, сколько картинок осталось на сегодня по лимиту.",
      "inputSchema": {"type": "object", "properties": {}}},
@@ -686,6 +741,8 @@ def _call(name, args, host):
         return _image_result(_save(data, "png" if ctype == "image/png" else "jpg"), host, "Сохранено.")
     if name == "kling_upload":
         return kling_upload(args)
+    if name.startswith("fashn_"):
+        return fashn_tool(name, args, host)
     if name.startswith("eleven_"):
         return eleven_tool(name, args, host)
     if name == "video_edit":
