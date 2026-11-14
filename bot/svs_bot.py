@@ -240,7 +240,7 @@ def note_visitor(tg_user, where):
 
 
 def on_chat_member(upd):
-    """Кто-то вступил в канал (по заявке или по ссылке) → уведомление админам."""
+    """Вступление в канал: считаем всех, уведомляем только о тех, кто до этого был в боте."""
     cid = channel_id()
     chat = upd.get("chat") or {}
     if not cid or str(chat.get("id")) != str(cid):
@@ -256,9 +256,8 @@ def on_chat_member(upd):
         db["stats"]["subs"] = db["stats"].get("subs", 0) + 1
         in_bot = str(member.get("id")) in db["users"]
         _save(db)
-    if NOTIFY_SUBS:
-        how = "по заявке" if upd.get("via_join_request") else "по ссылке"
-        notify_admins(f"📢 <b>Новый подписчик канала</b> — {who(member)}\n{how}" + (" · уже был в боте" if in_bot else ""))
+    if NOTIFY_SUBS and in_bot:          # уведомляем только о тех, кто пришёл через бота; остальные — в /stats
+        notify_admins(f"📢 <b>Подписался на канал после бота</b> — {who(member)}")
 
 
 def file_bytes(file_id):
