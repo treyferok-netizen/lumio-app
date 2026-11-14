@@ -10,10 +10,16 @@ YANDEX_API_KEY, FOLDER_ID и SVS_VLM_MODEL этому модулю больше 
 или передаваться процессу через systemd/Docker/другой способ запуска.
 
 Что делает:
-  describe(iid)        один раз описывает вещь по фото: тип, цвет, материал, стиль, сезон (хранится в каталоге)
-  pairs(iid)           «С чем носить» — 2–3 вещи из каталога (кэш до изменения каталога)
-  outfit(ids)          «Оценить образ» — сочетается ли, совет и замена из каталога
+  describe(iid)        один раз описывает вещь по фото; ai и ai_meta сохраняются в svs.json
+  catalog_changed(iid) ставит новую/изменённую вещь в приоритет фонового анализа
+  pairs(iid)           «С чем носить» — локальный поиск по всему каталогу + текстовый запрос GPT
+  outfit(ids)          «Оценить образ» — по сохранённым описаниям, без повторной отправки фото
+
+Старые описания используются без повторного анализа. Только изменение фото
+или названия сбрасывает описание; цена и размеры его не сбрасывают.
+Файлы svs_bot.py и svs_stylist.py обновляются вместе.
 """
+import hashlib
 import json
 import os
 import re
@@ -30,6 +36,14 @@ URL = "https://api.openai.com/v1/chat/completions"
 PER_DAY = int(os.environ.get("SVS_STYLE_DAY", "30") or 30)
 _pairs_cache = {}
 _desc_lock = threading.Lock()
+_worker_lock = threading.Lock()
+_catalog_changed = threading.Event()
+_worker_started = False
+_retry_after = 0.0
+_pending_ids = set()
+_failed_items = {}
+_candidate_limit = 36
+_ai_fields = ("type", "color", "material", "style", "season", "pattern", "fit", "details")
 
 STYLIST = ("Ты — стилист магазина премиальной мужской одежды «Сила в Стиле». Отвечай по-русски, коротко, "
            "по делу и дружелюбно, без канцелярита. Оценивай только одежду — сочетание цветов, фактур, стиля "
@@ -140,53 +154,194 @@ def probe():
         return {"ok": False, "model": MODEL, "error": str(e)[:300]}
 
 
-# ---------------------------------------------------------------- описания вещей
+# ---------------------------------------------------------------- постоянные описания вещей
+def _source(it):
+    """Описание меняется только вместе с фото или названием, а не с ценой."""
+    raw = json.dumps([it.get("photo", ""), it.get("title", "")], ensure_ascii=False)
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+def _has_description(it):
+    ai = it.get("ai")
+    if not isinstance(ai, dict) or not any(ai.get(k) for k in _ai_fields):
+        return False
+    meta = it.get("ai_meta")
+    source = meta.get("source") if isinstance(meta, dict) else None
+    # Старые описания сохраняем: миграция не должна заново оплачивать весь каталог.
+    return source is None or source == _source(it)
+
+
+def catalog_changed(iid=None):
+    """Разбудить единственный обработчик после добавления/редактирования товара."""
+    if iid is not None:
+        with _worker_lock:
+            _pending_ids.add(str(iid))
+    _catalog_changed.set()
+
+
 def describe(iid):
+    iid = str(iid)
     it = bot._load()["items"].get(str(iid))
     if not it:
         return None
-    if it.get("ai"):
+    if _has_description(it):
         return it["ai"]
     with _desc_lock:
-        it = bot._load()["items"].get(str(iid))
-        if it.get("ai"):
-            return it["ai"]
-        ai = chat([{"type": "text", "text": f"Вещь из каталога: «{it['title']}». Посмотри на фото и опиши её. Верни JSON: "
-                                            '{"type": "тип вещи", "color": "основной цвет", "material": "материал/фактура", '
-                                            '"style": "классика|кэжуал|спорт-шик|streetwear|smart casual", '
-                                            '"season": "лето|демисезон|зима|всесезон"}'},
-                    {"type": "image_url", "image_url": {"url": _small(bot.item_image(iid))}}], 200)
-        ai = {k: str(ai.get(k, ""))[:40] for k in ("type", "color", "material", "style", "season")}
-        with bot._lock:
-            db = bot._load()
-            if str(iid) in db["items"]:
-                db["items"][str(iid)]["ai"] = ai
+        for _ in range(2):
+            it = bot._load()["items"].get(iid)
+            if not it:
+                return None
+            if _has_description(it):
+                return it["ai"]
+            source = _source(it)
+            # Берём конкретный file_id, чтобы правка поста во время запроса
+            # не привязала старое фото к новому товару через дисковый кэш.
+            raw = bot.file_bytes(it["photo"])
+            ai = chat([{"type": "text", "text":
+                       f"Вещь из каталога: «{it['title']}». Опиши именно эту вещь на фото, "
+                       "игнорируя остальные вещи на модели. Сохрани достаточно деталей для последующего "
+                       "подбора образа без повторного просмотра фото. Не угадывай состав ткани по фото: "
+                       "укажи видимую фактуру, а неизвестные признаки — «неизвестно». Верни JSON: "
+                       '{"type":"тип вещи", "color":"основной и дополнительные цвета", '
+                       '"material":"видимая фактура/материал", '
+                       '"style":"классика|кэжуал|спорт-шик|streetwear|smart casual", '
+                       '"season":"лето|демисезон|зима|всесезон", '
+                       '"pattern":"однотонная/принт/полоска/клетка и т.п.", '
+                       '"fit":"крой и силуэт", "details":"важные детали для сочетаний"}'},
+                       {"type": "image_url", "image_url": {"url": _small(raw)}}], 450)
+            ai = {k: str(ai.get(k) or "")[:(160 if k == "details" else 80)] for k in _ai_fields}
+            if not any(ai.values()):
+                raise RuntimeError("OpenAI: пустое описание вещи")
+            with bot._lock:
+                db = bot._load()
+                current = db["items"].get(iid)
+                if not current:
+                    return None
+                if _source(current) != source:
+                    continue
+                current["ai"] = ai
+                current["ai_meta"] = {"source": source, "model": MODEL, "created_at": int(time.time())}
                 bot._save(db)
-        return ai
+                return ai
+        catalog_changed(iid)
+        raise RuntimeError("Вещь изменилась во время анализа; описание будет обновлено фоном")
+
+
+def _describe_batch():
+    """Один проход. При ошибке API делаем паузу вместо запросов по всему каталогу."""
+    global _retry_after
+    _catalog_changed.clear()
+    if not ready() or time.monotonic() < _retry_after:
+        return
+    items = bot._load()["items"]
+    with _worker_lock:
+        priority = _pending_ids.intersection(items)
+        _pending_ids.intersection_update(items)
+    for removed in set(_failed_items).difference(items):
+        _failed_items.pop(removed, None)
+    ordered = [(i, items[i]) for i in sorted(priority)] + [(i, it) for i, it in items.items() if i not in priority]
+    for iid, it in ordered:
+        if _has_description(it):
+            with _worker_lock:
+                _pending_ids.discard(iid)
+            continue
+        if not _has_description(it):
+            failed = _failed_items.get(iid)
+            if failed and failed[0] == _source(it) and time.monotonic() < failed[1]:
+                continue
+            with _worker_lock:
+                _pending_ids.discard(iid)
+            try:
+                describe(iid)
+                _failed_items.pop(iid, None)
+            except Exception as e:
+                message = repr(e)
+                for secret in (KEY, getattr(bot, "TOKEN", "")):
+                    if secret:
+                        message = message.replace(secret, "[скрыто]")
+                print("svs describe error", iid, message[:200], flush=True)
+                if str(e).startswith("OpenAI"):
+                    _retry_after = time.monotonic() + 600
+                    return
+                # Неисправное фото одного товара не блокирует остальные.
+                _failed_items[iid] = (_source(it), time.monotonic() + 600)
+            if _catalog_changed.is_set():
+                # Новая вещь приоритетнее долгого первоначального заполнения базы.
+                return
 
 
 def describe_missing():
-    """Фоном описывает вещи без описания (раз в 10 минут)."""
+    """Новые товары — сразу после сигнала; недописанные после перезапуска — автоматически."""
     while True:
-        if ready():
-            for iid, it in list(bot._load()["items"].items()):
-                if not it.get("ai"):
-                    try:
-                        describe(iid)
-                    except Exception as e:
-                        print("svs describe error", iid, repr(e)[:200], flush=True)
-                        break
-        time.sleep(600)
+        _describe_batch()
+        remaining = _retry_after - time.monotonic()
+        _catalog_changed.wait(timeout=max(1, remaining) if remaining > 0 else 600)
 
 
 def _line(iid, it):
-    ai = it.get("ai") or {}
-    tags = ", ".join(v for v in (ai.get("color"), ai.get("material"), ai.get("style"), ai.get("season")) if v)
+    ai = (it.get("ai") or {}) if _has_description(it) else {}
+    tags = "; ".join(f"{k}={ai[k]}" for k in _ai_fields if ai.get(k))
     return f"{iid}: {it['title']} — {bot.money(it['price'])}" + (f" ({tags})" if tags else "")
 
 
 def _version(db):
-    return f"{len(db['items'])}:{max([0] + [int(k) for k in db['items']])}"
+    # Важны также изменение фото, цены, описания и удаление — не только число вещей.
+    rows = [(str(i), {k: it.get(k) for k in ("title", "price", "sizes", "photo", "ai", "ai_meta")})
+            for i, it in sorted(db["items"].items())]
+    return hashlib.sha256(json.dumps(rows, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+
+
+def _group(it):
+    title = it.get("title", "")
+    ai = it.get("ai") or {}
+    for text in (title, str(ai.get("type", ""))):
+        sl, _ = slots(text)
+        if sl:
+            return "+".join(sorted(sl))
+        if re.match(r"^(ФУТБОЛК|ПОЛО|РУБАШК|СОРОЧК|ЛОНГСЛИВ|ВОДОЛАЗК|ДЖЕМПЕР|СВИТЕР|КАРДИГАН|ХУДИ|СВИТШОТ|ТОЛСТОВК|ОЛИМПИЙК|КОФТ|ТРИКОТАЖ)", text.upper()):
+            return "top"
+    return "accessory:" + re.split(r"\s+", str(ai.get("type") or title).lower())[0]
+
+
+def _candidate_ids(db, selected, mode):
+    """Локальный поиск по ВСЕМУ каталогу; GPT получает только короткую подборку."""
+    selected = set(selected)
+    anchors = [db["items"][i] for i in selected]
+    occupied = set().union(*(slots(it["title"])[0] for it in anchors))
+    used_groups = {_group(it) for it in anchors}
+    groups = {}
+    for iid, it in db["items"].items():
+        if iid in selected:
+            continue
+        group = _group(it)
+        sl, _ = slots(it["title"])
+        if mode == "pairs" and (sl & occupied or group in used_groups or ("bottom" in occupied and group == "bottom+top")):
+            continue
+        if mode == "outfit" and group not in used_groups:
+            continue
+        ai = (it.get("ai") or {}) if _has_description(it) else {}
+        score = 1 if ai else 0
+        for anchor in anchors:
+            other = anchor.get("ai") or {}
+            for field, weight in (("style", 4), ("season", 3), ("color", 1)):
+                a, b = str(ai.get(field) or "").lower(), str(other.get(field) or "").lower()
+                if a and b and a != "неизвестно" and b != "неизвестно":
+                    score += weight if a == b else 0
+                    if field == "season":
+                        score += 1 if "всесезон" in (a, b) else 0
+                        score -= 3 if {a, b} == {"лето", "зима"} else 0
+        groups.setdefault(group, []).append((score, str(iid)))
+    # Кандидаты разных типов представлены равномерно, а не только первыми ID.
+    buckets = [sorted(rows, key=lambda x: (-x[0], x[1])) for rows in groups.values()]
+    buckets.sort(key=lambda rows: (-rows[0][0], rows[0][1]))
+    result = []
+    for rank in range(_candidate_limit):
+        for rows in buckets:
+            if rank < len(rows):
+                result.append(rows[rank][1])
+                if len(result) == _candidate_limit:
+                    return result
+    return result
 
 
 # ---------------------------------------------------------------- «С чем носить»
@@ -195,35 +350,40 @@ def pairs(iid):
     db = bot._load()
     if iid not in db["items"]:
         return {"ok": False, "error": "Вещь не найдена"}
+    describe(iid)
+    db = bot._load()
+    if iid not in db["items"]:
+        return {"ok": False, "error": "Вещь не найдена"}
     key = (iid, _version(db))
     if key in _pairs_cache:
         return _pairs_cache[key]
-    describe(iid)
-    db = bot._load()
     me = db["items"][iid]
-    others = [_line(k, v) for k, v in db["items"].items() if k != iid]
+    candidates = _candidate_ids(db, [iid], "pairs")
+    others = [_line(k, db["items"][k]) for k in candidates]
     if not others:
         return {"ok": True, "items": [], "text": ""}
     ans = chat([{"type": "text", "text":
-                 f"Покупатель смотрит вещь:\n{_line(iid, me)}\n\nКаталог магазина:\n" + "\n".join(others[:120]) +
+                 f"Покупатель смотрит вещь:\n{_line(iid, me)}\n\nПодходящие кандидаты из каталога:\n" + "\n".join(others) +
                  "\n\nПодбери 2–3 вещи из каталога, которые лучше всего дополнят её в один образ (разные типы вещей, "
                  "не две куртки). Верни JSON: {\"ids\": [\"номер\", …], \"text\": \"одно предложение, почему это "
                  "сочетается\"}"}], 300)
     ids = []
     for x in ans.get("ids", []):            # без повторов типа: к костюму не предлагаем брюки и второй костюм
         x = str(x)
-        if x in db["items"] and x != iid and not conflict([me["title"]] + [db["items"][i]["title"] for i in ids] + [db["items"][x]["title"]]):
+        if x in candidates and x not in ids and _group(db["items"][x]) not in {_group(db["items"][i]) for i in ids} and not conflict([me["title"]] + [db["items"][i]["title"] for i in ids] + [db["items"][x]["title"]]):
             ids.append(x)
     ids = ids[:3]
     res = {"ok": True, "items": ids, "text": str(ans.get("text", ""))[:300]}
     _pairs_cache[key] = res
+    while len(_pairs_cache) > 256:
+        _pairs_cache.pop(next(iter(_pairs_cache)), None)
     return res
 
 
 # ---------------------------------------------------------------- «Оценить образ»
 def outfit(ids):
     db = bot._load()
-    ids = [str(i) for i in ids if str(i) in db["items"]][:4]
+    ids = list(dict.fromkeys(str(i) for i in ids if str(i) in db["items"]))[:4]
     if len(ids) < 2:
         return {"ok": False, "error": "Отметьте хотя бы 2 вещи"}
     clash = conflict([db["items"][i]["title"] for i in ids])
@@ -232,20 +392,27 @@ def outfit(ids):
     for i in ids:
         describe(i)
     db = bot._load()
-    rest = [_line(k, v) for k, v in db["items"].items() if k not in ids]
+    if any(i not in db["items"] for i in ids):
+        return {"ok": False, "error": "Каталог изменился; выберите вещи заново"}
+    candidates = _candidate_ids(db, ids, "outfit")
+    rest = [_line(k, db["items"][k]) for k in candidates]
     content = [{"type": "text", "text":
-                "Оцени образ из этих вещей (фото по порядку):\n" + "\n".join(_line(i, db["items"][i]) for i in ids) +
-                "\n\nДругие вещи каталога для возможной замены:\n" + ("\n".join(rest[:120]) or "—") +
+                "Оцени образ по сохранённым описаниям вещей. Фотографии уже проанализированы при добавлении "
+                "товаров. Не выдумывай отсутствующие признаки, посадку на конкретном человеке или точный состав ткани.\n" +
+                "\n".join(_line(i, db["items"][i]) for i in ids) +
+                "\n\nКандидаты из всего каталога для возможной замены:\n" + ("\n".join(rest) or "—") +
                 "\n\nНазвание вещи важнее фото: «КОСТЮМ» — это комплект из верха и низа, даже если на фото видно "
                 "только кофту. Учитывай тип вещи из названия.\n\nВерни JSON: {\"ok\": true если вещи хорошо сочетаются иначе false, "
                 "\"verdict\": \"короткий итог, до 8 слов\", \"tip\": \"1–2 предложения: почему и как носить\", "
                 "\"swap_out\": \"номер вещи, которую лучше заменить, или null\", "
                 "\"swap_in\": \"номер вещи из каталога на замену, или null\"}"}]
-    for i in ids:
-        content.append({"type": "image_url", "image_url": {"url": _small(bot.item_image(i), 640)}})
     ans = chat(content, 400)
     out, inn = str(ans.get("swap_out") or ""), str(ans.get("swap_in") or "")
-    swap = {"out": out, "in": inn} if out in ids and inn in db["items"] and inn not in ids else None
+    swap = None
+    if out in ids and inn in candidates:
+        titles = [db["items"][i]["title"] for i in ids if i != out] + [db["items"][inn]["title"]]
+        if not conflict(titles) and _group(db["items"][out]) == _group(db["items"][inn]):
+            swap = {"out": out, "in": inn}
     return {"ok": True, "good": bool(ans.get("ok")), "verdict": str(ans.get("verdict", ""))[:80],
             "tip": str(ans.get("tip", ""))[:400], "swap": swap}
 
@@ -267,5 +434,11 @@ def allowed(uid):
 
 
 def start():
-    if ready():
-        threading.Thread(target=describe_missing, daemon=True).start()
+    global _worker_started
+    if not ready():
+        return
+    with _worker_lock:
+        if not _worker_started:
+            _worker_started = True
+            threading.Thread(target=describe_missing, daemon=True).start()
+

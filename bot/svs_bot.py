@@ -197,6 +197,10 @@ def add_item(photo_id, caption, source, admin_chat=None):
         db = _load()
         for k, v in db["items"].items():         # тот же пост ещё раз (правка/повторная пересылка) — обновляем
             if v.get("source") == source or (v["title"] == info["title"] and v["price"] == info["price"]):
+                # Цена и размеры не требуют повторного анализа фотографии.
+                if v.get("photo") != photo_id or v.get("title") != info["title"]:
+                    v.pop("ai", None)
+                    v.pop("ai_meta", None)
                 v.update(info, photo=photo_id, source=source)
                 _save(db)
                 iid = k
@@ -209,6 +213,9 @@ def add_item(photo_id, caption, source, admin_chat=None):
             iid = str(int(max([0] + [int(k) for k in db["items"]])) + 1)
             db["items"][iid] = {**info, "photo": photo_id, "source": source, "ts": int(time.time())}
             _save(db)
+    # Уведомляем после сохранения и вне _lock: запрос OpenAI выполняется фоном.
+    import svs_stylist
+    svs_stylist.catalog_changed(iid)
     if admin_chat:
         send(admin_chat, f"✅ В каталоге: <b>{info['title']}</b> — {money(info['price'])} (№{iid})")
     print("svs item", iid, info["title"], flush=True)
@@ -444,3 +451,4 @@ def start():
     threading.Thread(target=flush_groups, daemon=True).start()
     import svs_stylist
     svs_stylist.start()
+
