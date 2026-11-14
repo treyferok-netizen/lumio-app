@@ -87,6 +87,7 @@ def _prompt(titles):
         "product reference. Do not copy these features from the customer's original trousers. "
         "Ignore mannequins, hangers, other people, background clothing, paper price tags and packaging "
         "in the product images. A suit/set named in the labels includes its matching top and bottom. "
+        "A dress, sundress or jumpsuit replaces both the top and the bottom clothing. "
         "Use natural fabric folds, correct layering, lighting and shadows. Shoes, jewelry, bags and hats "
         "must have realistic scale relative to this person's body. For hats or glasses preserve the face "
         "while positioning the item naturally. Return one full photograph with the same framing and aspect "

@@ -26,7 +26,6 @@ import urllib.parse
 
 import importlib
 
-import fashn
 import gpt_tryon
 import shops
 
@@ -159,7 +158,7 @@ def start_tryon(u, ids):
         bot._save(db)
     its = sorted(((i, db["items"][i]) for i in ids), key=lambda kv: layer(kv[1]["title"]))
     jid = secrets.token_hex(8)
-    _jobs[jid] = {"uid": uid, "status": "running", "step": 0, "total": len(its), "engine": bot.tryon_provider(), "ts": time.time(),
+    _jobs[jid] = {"uid": uid, "status": "running", "step": 0, "total": len(its), "engine": (bot.tryon_engines() or ["gpt"])[0], "ts": time.time(),
                   "titles": [it["title"] for _, it in its]}
     threading.Thread(target=_run, args=(jid, uid, its), daemon=True).start()
     return _js(200, {"ok": True, "job": jid, "total": len(its)})
@@ -167,22 +166,11 @@ def start_tryon(u, ids):
 
 def _run(jid, uid, its):
     job = _jobs[jid]
-    done = 0
     try:
         with bot._tryon_slots:
-            if job["engine"] == "gpt":
-                job["step"] = 1
-                raw, _, _ = bot.gpt_outfit(uid, its)
-            else:
-                model = bot.data_uri(bot.user_photo(uid))
-                for n, (iid, it) in enumerate(its, 1):
-                    job["step"] = n
-                    outs, _, _ = fashn.run(*bot.tryon_request(it["title"], model, bot.data_uri(bot.tryon_image(iid))))
-                    if not outs:
-                        raise RuntimeError("пустой ответ FASHN")
-                    model = outs[0]          # прежняя последовательная примерка FASHN
-                    done += 1
-                raw = bot.finish_tryon(uid, model, [it["title"] for _, it in its])
+            # GPT одним запросом; при любой его ошибке — FASHN по очереди (витрина показывает шаги).
+            raw, engine = bot.run_tryon(uid, its, on_engine=lambda e: job.update(engine=e, step=0),
+                                        on_step=lambda n: job.update(step=n))
         os.makedirs(RDIR, exist_ok=True)
         with open(os.path.join(RDIR, jid + ".jpg"), "wb") as f:
             f.write(raw)
@@ -191,8 +179,7 @@ def _run(jid, uid, its):
             db["stats"]["tryons"] = db["stats"].get("tryons", 0) + len(its)
             _bump_outfits(db, len(its))
             bot._save(db)
-        done = len(its)
-        job.update(status="done", step=len(its), result=f"{BASE}/res/{jid}.jpg")
+        job.update(status="done", step=len(its), engine=engine, result=f"{BASE}/res/{jid}.jpg")
         total = sum(it["price"] for _, it in its)
         names = "\n".join(f"• {it['title']} — {bot.money(it['price'])}" for _, it in its)
         try:
@@ -203,12 +190,12 @@ def _run(jid, uid, its):
             print("svs tryon notification error", gpt_tryon.safe_error(e, SHOP), flush=True)
     except Exception as e:
         print("svs app tryon error", gpt_tryon.safe_error(e, SHOP), flush=True)
-        job.update(status="error", error=e.public_message if isinstance(e, gpt_tryon.GPTImageError) else
-                   "Не получилось примерить. Попробуйте другое фото: в полный рост, лицом к камере.")
-        with bot._lock:                      # неудачные шаги не списываем
+        msg = bot.public_tryon_error(e)
+        job.update(status="error", error=msg.split(" Если не выйдет")[0])
+        with bot._lock:                      # неудачная примерка не списывается
             db = bot._load()
             usr = bot.user(db, uid)
-            usr["used"] = max(0, usr["used"] - (len(its) - done))
+            usr["used"] = max(0, usr["used"] - len(its))
             bot._save(db)
 
 

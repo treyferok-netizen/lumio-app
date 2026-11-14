@@ -7,8 +7,10 @@
   SVS_DAILY_FREE    бесплатных примерок в день на человека, по умолчанию 3
   OPENAI_API_KEY    ключ OpenAI для примерки GPT Image
   SVS_IMAGE_MODEL  gpt-image-2.5-sunburst по умолчанию
-  SVS_TRYON_PROVIDER  gpt по умолчанию; fashn — ручной выбор прежнего движка
-  FASHN_API_KEY     ключ для магазинов с TRYON_PROVIDER=fashn
+  SVS_TRYON_PROVIDER  основной движок: gpt (по умолчанию) или fashn
+  SVS_TRYON_FALLBACK  запасной при любой ошибке основного: fashn (по умолчанию) или off
+  FASHN_API_KEY     ключ FASHN (запасной движок)
+  (у Women's Line те же настройки с префиксом WL_)
 
 Каталог пополняется сам:
   • бот — администратор канала: каждый пост с фото и строкой «Цена …» становится вещью;
@@ -98,7 +100,7 @@ def status():
         face = "error: " + repr(e)[:120]
     return {"shop": SHOP, "brand": BRAND, "bot": BOT_USERNAME, "app": APP_URL, "manager": MANAGER,
             "channel": channel_id(), "channel_link": bool(CHANNEL_LINK),
-            "token": bool(TOKEN), "fashn": fashn.ready(), "tryon_engine": tryon_provider(),
+            "token": bool(TOKEN), "fashn": fashn.ready(), "tryon_engine": tryon_provider(), "tryon_order": tryon_engines(),
             "tryon_ready": tryon_ready(), "gpt_image": gpt_tryon.status(SHOP),
             "face_restore": face, "admins": sorted(ADMINS), "items": len(db["items"]),
             "users": len(db["users"]), "stats": db["stats"],
@@ -307,18 +309,77 @@ def sub_markup():
 
 # ---------------------------------------------------------------- инструкция для примерки по типу вещи
 def tryon_provider():
-    # Переключаем «Силу в Стиле»; другой магазин сохраняет свой прежний движок.
-    return _env("TRYON_PROVIDER", "gpt" if SHOP == "SVS" else "fashn").strip().lower()
+    # Основной движок: gpt для обоих магазинов; {SHOP}_TRYON_PROVIDER=fashn — вернуть FASHN основным.
+    return _env("TRYON_PROVIDER", "gpt").strip().lower()
+
+
+def _engine_ready(engine):
+    return gpt_tryon.ready(SHOP) if engine == "gpt" else (fashn.ready() if engine == "fashn" else False)
+
+
+def tryon_engines():
+    """Порядок попыток: основной движок, затем запасной ({SHOP}_TRYON_FALLBACK, по умолчанию fashn; off — без запасного).
+    Движок без ключа пропускается."""
+    primary = tryon_provider()
+    fallback = _env("TRYON_FALLBACK", "fashn").strip().lower()
+    order = [primary] + ([fallback] if fallback not in ("", "off", "none", primary) else [])
+    return [e for e in order if _engine_ready(e)]
 
 
 def tryon_ready():
-    provider = tryon_provider()
-    return gpt_tryon.ready(SHOP) if provider == "gpt" else (fashn.ready() if provider == "fashn" else False)
+    return bool(tryon_engines())
 
 
 def gpt_outfit(uid, items):
     """Оригинальное фото клиента + все выбранные вещи в одном запросе."""
     return gpt_tryon.run(user_photo(uid), [(it["title"], tryon_image(iid)) for iid, it in items], shop=SHOP)
+
+
+def fashn_outfit(uid, items, on_step=None):
+    """FASHN: вещи надеваются по очереди, каждая на предыдущий результат; лицо — с исходного фото."""
+    model = data_uri(user_photo(uid))
+    for n, (iid, it) in enumerate(items, 1):
+        if on_step:
+            on_step(n)
+        outs, _, _ = fashn.run(*tryon_request(it["title"], model, data_uri(tryon_image(iid))))
+        if not outs:
+            raise RuntimeError("пустой ответ FASHN")
+        model = outs[0]
+    return finish_tryon(uid, model, [it["title"] for _, it in items])
+
+
+def run_tryon(uid, items, on_engine=None, on_step=None):
+    """Примерка с запасным движком. Возвращает (jpeg, engine). Если упали все — исключение последнего;
+    сообщение для покупателя — из public_tryon_error."""
+    engines = tryon_engines()
+    if not engines:
+        raise RuntimeError("нет готового движка примерки")
+    last = None
+    for engine in engines:
+        if on_engine:
+            on_engine(engine)
+        try:
+            if engine == "gpt":
+                if on_step:
+                    on_step(1)
+                raw, _, _ = gpt_outfit(uid, items)
+            else:
+                raw = fashn_outfit(uid, items, on_step)
+            if last is not None:
+                print(f"{SHOP.lower()} tryon fallback ok", engine, flush=True)
+            return raw, engine
+        except Exception as e:
+            last = e
+            print(f"{SHOP.lower()} tryon {engine} error", gpt_tryon.safe_error(e, SHOP), flush=True)
+    raise last
+
+
+def public_tryon_error(e):
+    # Фото, которое не прошло проверку GPT, а FASHN тоже не справился, — понятная причина для покупателя.
+    if isinstance(e, gpt_tryon.GPTImageError):
+        return e.public_message
+    return ("Не получилось примерить 😔 Попробуйте другое фото: в полный рост, лицом к камере, "
+            "без сильного наклона. Если не выйдет — напишите " + ASK)
 
 
 _KEEP = " Keep the person's face, body, pose, background and all their other clothes unchanged."
@@ -600,14 +661,9 @@ def try_on(chat, uid, iid, name):
     def run():
         with _tryon_slots:
             try:
-                if tryon_provider() == "gpt":
-                    raw, used, secs = gpt_outfit(uid, [(iid, it)])
-                else:
-                    outs, used, secs = fashn.run(*tryon_request(it["title"], data_uri(user_photo(uid)),
-                                                                data_uri(tryon_image(iid))))
-                    if not outs:
-                        raise RuntimeError("пустой ответ")
-                    raw = finish_tryon(uid, outs[0], [it["title"]])
+                t0 = time.time()
+                raw, engine = run_tryon(uid, [(iid, it)])
+                secs = time.time() - t0
                 delivered = send_photo_bytes(chat, raw,
                                  f"<b>{it['title']}</b> — {money(it['price'])}"
                                  + (f"\nРазмеры: {it['sizes']}" if it.get("sizes") else ""),
@@ -619,16 +675,14 @@ def try_on(chat, uid, iid, name):
                     db = _load()
                     db["stats"]["tryons"] = db["stats"].get("tryons", 0) + 1
                     _save(db)
-                print("svs tryon", uid, iid, f"{secs:.0f}s", flush=True)
+                print(f"{SHOP.lower()} tryon", uid, iid, engine, f"{secs:.0f}s", flush=True)
             except Exception as e:
-                print("svs tryon error", gpt_tryon.safe_error(e, SHOP), flush=True)
+                print(f"{SHOP.lower()} tryon error", gpt_tryon.safe_error(e, SHOP), flush=True)
                 with _lock:
                     db = _load()
                     user(db, uid)["used"] = max(0, user(db, uid)["used"] - 1)   # неудача не считается
                     _save(db)
-                send(chat, e.public_message if isinstance(e, gpt_tryon.GPTImageError) else
-                     "Не получилось примерить 😔 Попробуйте другое фото: в полный рост, лицом к камере, "
-                     "без сильного наклона. Если не выйдет — напишите " + ASK)
+                send(chat, public_tryon_error(e))
     threading.Thread(target=run, daemon=True).start()
 
 
