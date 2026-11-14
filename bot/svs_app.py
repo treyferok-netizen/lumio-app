@@ -157,7 +157,7 @@ def _run(jid, uid, its):
                     raise RuntimeError("пустой ответ FASHN")
                 model = outs[0]          # следующая вещь надевается на результат
                 done += 1
-        raw = bot.finish_tryon(uid, model)            # лицо покупателя — с исходного фото
+        raw = bot.finish_tryon(uid, model, [it["title"] for _, it in its])   # лицо покупателя — с исходного фото
         os.makedirs(RDIR, exist_ok=True)
         with open(os.path.join(RDIR, jid + ".jpg"), "wb") as f:
             f.write(raw)

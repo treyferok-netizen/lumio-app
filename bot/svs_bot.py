@@ -105,11 +105,17 @@ def send_photo_bytes(chat, raw, caption="", reply_markup=None):
     return r
 
 
-def finish_tryon(uid, url):
-    """Скачать результат FASHN и вернуть на него лицо покупателя с исходного фото."""
+HEADWEAR = re.compile(r"^(ОЧК|КЕПК|ШАПК|БЕЙСБОЛК|ПАНАМ|ШЛЯП|БАНДАН|КАПЮШОН|БАЛАКЛАВ)", re.I)
+
+
+def finish_tryon(uid, url, titles=()):
+    """Скачать результат FASHN и вернуть на него лицо покупателя с исходного фото.
+    Очки и головные уборы надеваются на голову — для них лицо не возвращаем, иначе вещь пропадёт."""
     import svs_face
     r = requests.get(url, timeout=(10, 60))
     r.raise_for_status()
+    if any(HEADWEAR.match((t or "").strip()) for t in titles):
+        return r.content
     orig = user_photo(uid)
     return svs_face.restore(orig, r.content) if orig else r.content
 
@@ -427,7 +433,7 @@ def try_on(chat, uid, iid, name):
                     "prompt": prompt, "resolution": "1k", "generation_mode": "fast", "output_format": "jpeg"})
                 if not outs:
                     raise RuntimeError("пустой ответ")
-                send_photo_bytes(chat, finish_tryon(uid, outs[0]),
+                send_photo_bytes(chat, finish_tryon(uid, outs[0], [it["title"]]),
                                  f"<b>{it['title']}</b> — {money(it['price'])}"
                                  + (f"\nРазмеры: {it['sizes']}" if it.get("sizes") else ""),
                                  kb([btn("Заказать", f"ord:{iid}", style="success")],
