@@ -778,6 +778,9 @@ def on_update(upd):
         return
     chat, uid, text = msg["chat"]["id"], msg["from"]["id"], (msg.get("text") or "").strip()
     is_admin = uid in ADMINS
+    command = text.split(maxsplit=1)[0].split("@", 1)[0] if text else ""
+    if text == "/" or command == "/help":
+        return send(chat, command_help(is_admin))
     if is_admin and (msg.get("forward_origin") or msg.get("forward_from_chat")):
         return on_post(msg, admin_chat=chat)
     if is_admin and text.startswith(("/items", "/del", "/stats", "/clean", "/passport", "/color")):
@@ -809,14 +812,53 @@ def on_update(upd):
          reply_markup=kb([btn("👕 Открыть каталог", "cat", style="success")]))
 
 
+def command_menu(admin=False):
+    commands = [
+        {"command": "catalog", "description": "Открыть каталог и примерочную"},
+        {"command": "start", "description": "Как пользоваться ботом"},
+        {"command": "delete_photo", "description": "Удалить моё фото для примерки"},
+        {"command": "help", "description": "Все доступные команды и примеры"},
+    ]
+    if admin:
+        commands.extend([
+            {"command": "items", "description": "Список товаров и их номера"},
+            {"command": "stats", "description": "Статистика магазина"},
+            {"command": "clean", "description": "Очистить фото товара: /clean номер"},
+            {"command": "del", "description": "Удалить товар: /del номер"},
+        ])
+        if SHOP == "SVS":
+            commands.extend([
+                {"command": "passport", "description": "Описание вещи: /passport номер или название"},
+                {"command": "color", "description": "Исправить цвет: /color номер | цвет"},
+            ])
+    return commands
+
+
+def command_help(admin=False):
+    rows = [f"/{it['command']} — {html.escape(it['description'])}" for it in command_menu(admin)]
+    if admin:
+        rows.extend(["", "Примеры:", "/clean 14", "/del 14"])
+        if SHOP == "SVS":
+            rows.extend(["/passport КОФТА KITON", "/color КОФТА KITON | тёмно-коричневый"])
+    return "Доступные команды:\n\n" + "\n".join(rows)
+
+
+def setup_commands():
+    # Список при вводе «/» задаётся отдельно для покупателей и личного чата каждого админа.
+    scopes = [({"type": "default"}, False), ({"type": "all_private_chats"}, False)]
+    scopes.extend(({"type": "chat", "chat_id": uid}, True) for uid in sorted(ADMINS) if uid > 0)
+    for scope, admin in scopes:
+        # Обновляем и общий, и русскоязычный список, чтобы старый ru-список не перекрывал новый.
+        for language in ("", "ru"):
+            tg("setMyCommands", {"commands": command_menu(admin), "scope": scope, "language_code": language})
+
+
 def poll():
     tg("deleteWebhook", {"drop_pending_updates": False})
     tg("setMyDescription", {"description": DESCRIPTION})
     tg("setMyShortDescription", {"short_description": SHORT_DESCRIPTION})
     tg("setChatMenuButton", {"menu_button": {"type": "web_app", "text": "Витрина", "web_app": {"url": APP_URL}}})
-    tg("setMyCommands", {"commands": [{"command": "catalog", "description": "Каталог и примерка"},
-                                      {"command": "start", "description": "Как пользоваться"},
-                                      {"command": "delete_photo", "description": "Удалить моё фото"}]})
+    setup_commands()
     me = tg("getMe").get("result") or {}
     global BOT_USERNAME
     BOT_USERNAME = me.get("username") or BOT_USERNAME
