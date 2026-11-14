@@ -105,7 +105,7 @@ def items():
     for iid, it in sorted(db["items"].items(), key=lambda kv: -kv[1].get("ts", 0)):
         out.append({"id": iid, "title": it["title"], "price": it["price"], "sizes": it.get("sizes", ""),
                     "size_list": size_list(it.get("sizes", "")), "cat": category(it["title"]),
-                    "img": f"/svs/img/{iid}.jpg"})
+                    "img": f"/svs/img/{iid}.jpg?v=2-{it.get('ts', 0)}"})
     return out
 
 

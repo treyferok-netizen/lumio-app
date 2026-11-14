@@ -112,7 +112,8 @@ class Web(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "public, max-age=86400" if path.startswith("/svs/img/") else "no-store")
+        # кэшируем только удачные картинки — иначе телефон на сутки запоминает ошибку
+        self.send_header("Cache-Control", "public, max-age=86400" if code == 200 and path.startswith("/svs/img/") else "no-store")
         self.end_headers()
         self.wfile.write(data)
 
