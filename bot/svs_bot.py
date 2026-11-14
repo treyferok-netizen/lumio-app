@@ -837,11 +837,12 @@ def _description_command(chat, text):
 def looks_report(db):
     """Образы сезона блоками (каждый — целое сообщение без разрыва HTML-тегов)."""
     import style_looks
-    name = lambda i: f'{db["items"][i]["title"]} (№{i})' if i in db["items"] else f"№{i} — уже нет в каталоге"
+    name = lambda i: f'{db["items"][i]["title"]} (№{i})'
     blocks, gaps = ["<b>Образы сезона осень–зима 2026/27</b> — по ним работает стилист."], []
     for lk in style_looks.looks(SHOP):
-        if lk["set"]:
-            items = ", ".join(name(i) for i in lk["set"] + lk["extra"])
+        present = [i for i in lk["set"] + lk["extra"] if i in db["items"]]   # удалённые вещи просто не показываем
+        if any(i in db["items"] for i in lk["set"]):
+            items = ", ".join(name(i) for i in present)
             blocks.append(f"<b>{html.escape(lk['name'])}</b> — {html.escape(lk['palette'])}\n{html.escape(items)}")
         if lk.get("missing"):
             gaps.append(f"• {html.escape(lk['name'])}: {html.escape(lk['missing'])}")
