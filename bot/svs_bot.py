@@ -24,20 +24,42 @@ import requests
 
 import fashn
 import seedream
+import shops
 
-TOKEN = os.environ.get("SVS_BOT_TOKEN", "").strip()
+SHOP = globals().get("SHOP", "SVS")          # второй магазин загружается тем же кодом (shops.py)
+C = shops.cfg(SHOP)
+BRAND = C["name"]
+
+
+def _env(key, default=""):
+    return os.environ.get(f"{SHOP}_{key}", default)
+
+
+def stylist():
+    """ИИ-стилист этого магазина (для «Силы в Стиле» — svs_stylist.py, у женского — заглушка из shops.py)."""
+    st = globals().get("_STYLIST")
+    if st is None:
+        import importlib
+        st = importlib.import_module("svs_stylist")
+    return st
+
+
+TOKEN = _env("BOT_TOKEN").strip()
 API = f"https://api.telegram.org/bot{TOKEN}/"
-MANAGER = os.environ.get("SVS_MANAGER", "romanov_roman_svs").lstrip("@")
-DAILY = int(os.environ.get("SVS_DAILY_FREE", "3") or 3)
-SUBS_ONLY = os.environ.get("SVS_SUBSCRIBERS_ONLY", "1").strip() not in ("0", "no", "false", "")
-CHANNEL_LINK = os.environ.get("SVS_CHANNEL_LINK", "").strip()      # ссылка-приглашение в закрытый канал
-AUTO_APPROVE = os.environ.get("SVS_AUTO_APPROVE", "1").strip() not in ("0", "no", "false", "")
-JOIN_WELCOME = os.environ.get("SVS_JOIN_WELCOME", "1").strip() not in ("0", "no", "false", "")
-ADMINS = {int(x) for x in re.findall(r"-?\d+", os.environ.get("SVS_ADMIN_IDS") or os.environ.get("ADMIN_CHAT_ID") or "")}
-STORE = os.path.join(seedream.DIR, "svs.json")
-UDIR = os.path.join(seedream.DIR, "svs_users")          # фото покупателей — не публичные
-IDIR = os.path.join(seedream.DIR, "svs_items")          # кэш фото вещей для витрины
-APP_URL = os.environ.get("SVS_APP_URL", "").strip() or (os.environ.get("PUBLIC_BASE", "https://212-87-223-41.sslip.io").rstrip("/") + "/svs/")
+MANAGER = (_env("MANAGER") or C["manager"]).lstrip("@")
+DAILY = int(_env("DAILY_FREE", "3") or 3)
+SUBS_ONLY = _env("SUBSCRIBERS_ONLY", "1").strip() not in ("0", "no", "false", "")
+CHANNEL_LINK = _env("CHANNEL_LINK").strip()      # ссылка-приглашение в закрытый канал
+AUTO_APPROVE = _env("AUTO_APPROVE", "1").strip() not in ("0", "no", "false", "")
+JOIN_WELCOME = _env("JOIN_WELCOME", "1").strip() not in ("0", "no", "false", "")
+ADMINS = {int(x) for x in re.findall(r"-?\d+", _env("ADMIN_IDS") or os.environ.get("ADMIN_CHAT_ID") or "")}
+BOT_USERNAME = C["bot"]                          # уточняется через getMe при запуске
+ASK = f"@{MANAGER}" if MANAGER else "нам в этот чат"   # куда писать с вопросами
+STORE = os.path.join(seedream.DIR, f"{C['store']}.json")
+UDIR = os.path.join(seedream.DIR, f"{C['store']}_users")          # фото покупателей — не публичные
+IDIR = os.path.join(seedream.DIR, f"{C['store']}_items")          # кэш фото вещей для витрины
+APP_URL = _env("APP_URL").strip() or (os.environ.get("PUBLIC_BASE", "https://212-87-223-41.sslip.io").rstrip("/")
+                                      + C["path"] + "/")
 PAGE = 5
 _lock = threading.Lock()
 _groups = {}            # media_group_id -> {"photo", "caption", "ts", "admin_chat"}
@@ -68,7 +90,9 @@ def status():
         face = os.path.basename(svs_face._cascade_path()) if svs_face.ENABLED else "off"
     except Exception as e:
         face = "error: " + repr(e)[:120]
-    return {"token": bool(TOKEN), "fashn": fashn.ready(), "face_restore": face, "admins": sorted(ADMINS), "items": len(db["items"]),
+    return {"shop": SHOP, "brand": BRAND, "bot": BOT_USERNAME, "app": APP_URL, "manager": MANAGER,
+            "channel": channel_id(), "channel_link": bool(CHANNEL_LINK),
+            "token": bool(TOKEN), "fashn": fashn.ready(), "face_restore": face, "admins": sorted(ADMINS), "items": len(db["items"]),
             "users": len(db["users"]), "stats": db["stats"],
             "last_items": [f'{k}: {v["title"]} — {v["price"]}' for k, v in list(db["items"].items())[-10:]]}
 
@@ -105,7 +129,8 @@ def send_photo_bytes(chat, raw, caption="", reply_markup=None):
     return r
 
 
-HEADWEAR = re.compile(r"^(ОЧК|КЕПК|ШАПК|БЕЙСБОЛК|ПАНАМ|ШЛЯП|БАНДАН|КАПЮШОН|БАЛАКЛАВ)", re.I)
+HEADWEAR = re.compile(r"^(ОЧК|КЕПК|ШАПК|БЕЙСБОЛК|ПАНАМ|ШЛЯП|БАНДАН|КАПЮШОН|БАЛАКЛАВ|СЕРЬГ|СЕР[ЁЕ]Ж|КАФФ|ЗАКОЛК|ОБОДОК|ПЛАТОК|"
+                      r"КОСЫНК)", re.I)
 
 
 def finish_tryon(uid, url, titles=()):
@@ -143,7 +168,8 @@ def kb(*rows):
 
 
 def send(chat, text, **kw):
-    return tg("sendMessage", {"chat_id": chat, "text": text, "parse_mode": "HTML", **kw})
+    return tg("sendMessage", {"chat_id": chat, "text": text, "parse_mode": "HTML",
+                              **{k: v for k, v in kw.items() if v is not None}})
 
 
 def file_bytes(file_id):
@@ -227,7 +253,7 @@ _subs_cache = {}
 
 def channel_id():
     """Канал берём из настроек, иначе — из постов, которые бот уже получил из канала."""
-    env = os.environ.get("SVS_CHANNEL_ID", "").strip()
+    env = _env("CHANNEL_ID").strip()
     if env:
         return env
     counts = {}
@@ -260,17 +286,24 @@ def is_subscriber(uid):
     return ok
 
 
-NOT_SUB = "Примерка доступна подписчикам канала «Сила в Стиле». Подпишитесь — и возвращайтесь примерять 🙌"
+NOT_SUB = f"Примерка доступна подписчикам канала «{BRAND}». Подпишитесь — и возвращайтесь примерять 🙌"
+
+
+SUBSCRIBED = "Я подписалась ✅" if C["female"] else "Я подписался ✅"
 
 
 def sub_markup():
-    return kb([btn("Подписаться на канал", url=CHANNEL_LINK, style="success")], [btn("Я подписался ✅", "cat")]) \
-        if CHANNEL_LINK else kb([btn("Я подписался ✅", "cat")])
+    return kb([btn("Подписаться на канал", url=CHANNEL_LINK, style="success")], [btn(SUBSCRIBED, "cat")]) \
+        if CHANNEL_LINK else kb([btn(SUBSCRIBED, "cat")])
 
 
 # ---------------------------------------------------------------- инструкция для примерки по типу вещи
 _KEEP = " Keep the person's face, body, pose, background and all their other clothes unchanged."
 _PROMPTS = [
+    (r"^(СЕРЬГ|СЕР[ЁЕ]Ж|КАФФ)", "Put the earrings from the product photo on the person's ears at realistic, small scale."),
+    (r"^(КОЛЬЕ|ПОДВЕСК|ЦЕПОЧК|ЦЕПЬ|ЧОКЕР|БУСЫ|ОЖЕРЕЛЬ)", "Put the necklace from the product photo on the person's neck at "
+                                                        "realistic scale, lying naturally over their clothes or skin."),
+    (r"^(КОЛЬЦ)", "Put the ring from the product photo on the person's finger at realistic, small scale."),
     (r"^(КРОССОВ|КЕД|ТУФЛ|ЛОФЕР|МОКАСИН|БОТИН|САПОГ|СЛИП|ДЕРБИ|ОКСФОРД|ЧЕЛСИ|САНДАЛ|ШЛ[ЁЕ]П|ОБУВ)",
      "Replace only the shoes the person is wearing with the shoes from the product photo. The new shoes must be a "
      "realistic size: exactly the same length and height as the person's current shoes, proportional to their feet and "
@@ -342,8 +375,7 @@ def add_item(photo_id, caption, source, admin_chat=None):
     # Сразу кэшируем фото для витрины, чтобы первый покупатель не ждал загрузки из Telegram
     threading.Thread(target=lambda: _safe(item_image, iid), daemon=True).start()
     # Уведомляем после сохранения и вне _lock: запрос OpenAI выполняется фоном.
-    import svs_stylist
-    svs_stylist.catalog_changed(iid)
+    stylist().catalog_changed(iid)
     if admin_chat:
         send(admin_chat, f"✅ В каталоге: <b>{info['title']}</b> — {money(info['price'])} (№{iid})")
     print("svs item", iid, info["title"], flush=True)
@@ -386,24 +418,26 @@ def flush_groups():
 
 
 # ---------------------------------------------------------------- покупатель
-DESCRIPTION = ("Примерочная магазина «Сила в Стиле» 🖤\n\n"
+DESCRIPTION = (f"Примерочная магазина «{BRAND}» {C['emoji']}\n\n"
                "Примерьте любую вещь из нашего канала на себя — по своему фото, за 20 секунд. "
-               "Соберите образ, узнайте мнение стилиста и закажите с доставкой по России.\n\n"
+               + ("Соберите образ, узнайте мнение стилиста и закажите с доставкой по России.\n\n" if SHOP == "SVS"
+                  else "Соберите образ и закажите с доставкой по России.\n\n") +
                "Нажмите «Старт», чтобы начать.")
-SHORT_DESCRIPTION = "Примерьте вещи «Сила в Стиле» на себя по своему фото — бесплатно для подписчиков канала."
+SHORT_DESCRIPTION = f"Примерьте вещи «{BRAND}» на себя по своему фото — бесплатно для подписчиков канала."
 
 
 def welcome(name):
     return (f"Привет{', ' + name if name else ''}! 👋\n\n"
-            "Добро пожаловать в примерочную <b>Сила в Стиле</b> — здесь можно примерить вещи из нашего канала "
+            f"Добро пожаловать в примерочную <b>{BRAND}</b> — здесь можно примерить вещи из нашего канала "
             "на себя, не выходя из дома.\n\n"
             "<b>Как это работает:</b>\n"
             "1️⃣ Откройте витрину и загрузите своё фото в полный рост\n"
             "2️⃣ Нажмите «Примерить» на любой вещи — через 20 секунд увидите себя в ней\n"
-            "3️⃣ Соберите образ из нескольких вещей и спросите стилиста, как они сочетаются\n"
+            + ("3️⃣ Соберите образ из нескольких вещей и спросите стилиста, как они сочетаются\n" if stylist().ready()
+               else "3️⃣ Соберите образ из нескольких вещей и примерьте его целиком\n") +
             "4️⃣ Понравилось — оформите заказ прямо в витрине\n\n"
-            "🚚 Доставка с примеркой по Москве, отправка по России.\n"
-            f"Вопросы — @{MANAGER}\n\n"
+            f"{C['delivery']}\n"
+            f"Вопросы — {ASK}\n\n"
             "<i>Фото используется только для примерки. Удалить его: /delete_photo</i>")
 
 
@@ -443,7 +477,7 @@ def try_on(chat, uid, iid, name):
             return send(chat, "Сначала пришлите своё фото в полный рост — одним сообщением, как обычное фото.")
         if uid not in ADMINS and u["used"] >= DAILY:
             return send(chat, f"Сегодня вы уже сделали {DAILY} примерки. Новые будут доступны завтра 🙌\n"
-                              f"Понравилась вещь? Напишите @{MANAGER}")
+                              f"Понравилась вещь? Напишите {ASK}")
         u["used"] += 1
         _save(db)
     if not fashn.ready():
@@ -477,7 +511,7 @@ def try_on(chat, uid, iid, name):
                     user(db, uid)["used"] = max(0, user(db, uid)["used"] - 1)   # неудача не считается
                     _save(db)
                 send(chat, "Не получилось примерить 😔 Попробуйте другое фото: в полный рост, лицом к камере, "
-                           "без сильного наклона. Если не выйдет — напишите @" + MANAGER)
+                           "без сильного наклона. Если не выйдет — напишите " + ASK)
     threading.Thread(target=run, daemon=True).start()
 
 
@@ -493,8 +527,8 @@ def order(chat, frm, iid):
         db = _load()
         db["stats"]["orders"] = db["stats"].get("orders", 0) + 1
         _save(db)
-    send(chat, f"Отлично! Передал менеджеру — он скоро напишет вам.\nИли напишите сами: @{MANAGER}",
-         reply_markup=kb([btn("Написать менеджеру", url=f"https://t.me/{MANAGER}")]))
+    send(chat, "Отлично! Передал менеджеру — он скоро напишет вам." + (f"\nИли напишите сами: {ASK}" if MANAGER else ""),
+         reply_markup=kb([btn("Написать менеджеру", url=f"https://t.me/{MANAGER}")]) if MANAGER else None)
 
 
 def admin_cmd(chat, text):
@@ -532,7 +566,7 @@ def on_join_request(req):
         db["stats"]["joins"] = db["stats"].get("joins", 0) + 1
         _save(db)
     if JOIN_WELCOME and req.get("user_chat_id"):
-        send(req["user_chat_id"], f"Добро пожаловать в <b>Сила в Стиле</b>, {frm.get('first_name') or 'друг'}! 🖤\n\n"
+        send(req["user_chat_id"], f"Добро пожаловать в <b>{BRAND}</b>, {frm.get('first_name') or 'друг'}! {C['emoji']}\n\n"
                                   "Заявка одобрена. А ещё у нас есть примерочная: загрузите своё фото и примерьте "
                                   "любую вещь из канала на себя — бесплатно для подписчиков.",
              reply_markup=kb([app_btn("👕 Примерить на себя")]))
@@ -568,7 +602,7 @@ def on_update(upd):
     if text.startswith("/start"):
         return send(chat, welcome((msg.get("from") or {}).get("first_name", "")),
                     reply_markup=kb([app_btn("🛍 Открыть витрину")],
-                                    [btn("Каталог в чате", "cat"), btn("Менеджер", url=f"https://t.me/{MANAGER}")]))
+                                    [btn("Каталог в чате", "cat")] + ([btn("Менеджер", url=f"https://t.me/{MANAGER}")] if MANAGER else [])))
     if text.startswith(("/catalog", "Каталог")):
         return show_catalog(chat)
     if text.startswith("/delete_photo"):
@@ -601,7 +635,9 @@ def poll():
                                       {"command": "start", "description": "Как пользоваться"},
                                       {"command": "delete_photo", "description": "Удалить моё фото"}]})
     me = tg("getMe").get("result") or {}
-    print("svs polling as", me.get("username"), flush=True)
+    global BOT_USERNAME
+    BOT_USERNAME = me.get("username") or BOT_USERNAME
+    print(f"{SHOP.lower()} polling as", me.get("username"), flush=True)
     offset = None
     while True:
         q = {"timeout": 50, "allowed_updates": ["message", "callback_query", "channel_post", "edited_channel_post",
@@ -622,10 +658,9 @@ def poll():
 
 def start():
     if not TOKEN:
-        print("svs bot off (SVS_BOT_TOKEN)", flush=True)
+        print(f"{SHOP.lower()} bot off ({SHOP}_BOT_TOKEN)", flush=True)
         return
     threading.Thread(target=poll, daemon=True).start()
     threading.Thread(target=flush_groups, daemon=True).start()
-    import svs_stylist
-    svs_stylist.start()
+    stylist().start()
 

@@ -17,8 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import ads
 import index
 import mcp_server
-import svs_app
-import svs_bot
+import shops
 import vk_bot
 
 MAX_BODY = 12 * 1024 * 1024
@@ -95,7 +94,7 @@ class Web(BaseHTTPRequestHandler):
         if body:
             self.wfile.write(body)
 
-    # ------------------------------------------------ витрина «Сила в Стиле» (/svs)
+    # ------------------------------------------------ витрины магазинов (/svs — «Сила в Стиле», /wl — женский; shops.py)
     def _svs(self, method):
         path, _, query = self.path.partition("?")
         n = int(self.headers.get("Content-Length") or 0)
@@ -103,7 +102,7 @@ class Web(BaseHTTPRequestHandler):
             return self._raw(413)
         body = self.rfile.read(n) if n else b""
         try:
-            code, ctype, data = svs_app.handle(method, path, query, self.headers, body)
+            code, ctype, data = shops.app_for(path).handle(method, path, query, self.headers, body)
         except (ValueError, KeyError) as e:
             code, ctype, data = 400, "application/json", json.dumps({"ok": False, "error": str(e)[:200]}).encode()
         except Exception as e:
@@ -113,7 +112,7 @@ class Web(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
         # кэшируем только удачные картинки — иначе телефон на сутки запоминает ошибку
-        self.send_header("Cache-Control", "public, max-age=86400" if code == 200 and path.startswith("/svs/img/") else "no-store")
+        self.send_header("Cache-Control", "public, max-age=86400" if code == 200 and "/img/" in path else "no-store")
         self.end_headers()
         self.wfile.write(data)
 
@@ -179,7 +178,7 @@ class Web(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = self.path.partition("?")[0]
-        if path.startswith("/svs"):
+        if shops.app_for(path):
             return self._svs("POST")
         if path.startswith("/cabinet"):
             return self._cabinet("POST")
@@ -199,13 +198,13 @@ class Web(BaseHTTPRequestHandler):
         self._send(index.handler(ev, CTX))
 
     def do_DELETE(self):
-        if self.path.startswith("/svs/"):
+        if shops.app_for(self.path.partition("?")[0]):
             return self._svs("DELETE")
         self._raw(405 if self.path.startswith("/mcp/") else 404)
 
     def do_GET(self):
         path = self.path.partition("?")[0]
-        if path.startswith("/svs"):
+        if shops.app_for(path):
             return self._svs("GET")
         if path.startswith("/cabinet"):
             return self._cabinet("GET")
@@ -243,7 +242,7 @@ class Web(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     threading.Thread(target=poll, daemon=True).start()
     vk_bot.start()
-    svs_bot.start()
+    shops.start_all()
     srv = ThreadingHTTPServer(("127.0.0.1", 8080), Web)
     print("orders on 127.0.0.1:8080; mcp", "on" if mcp_server.enabled() else "off (MCP_SECRET)", flush=True)
     srv.serve_forever()

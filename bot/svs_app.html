@@ -3,12 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1">
-<title>Сила в Стиле — витрина</title>
+<title>__BRAND__ — витрина</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 :root{
-  --bg:#0c0c0d; --card:#161618; --line:#26262a; --text:#f2efe9; --muted:#8d8a85;
-  --accent:#c9a46a; --accent-ink:#1a1408; --danger:#d0574e; --radius:14px;
+  __THEME__ --danger:#d0574e; --radius:14px;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;background:var(--bg);color:var(--text);font:15px/1.35 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif}
@@ -29,9 +28,9 @@ header{display:flex;align-items:center;justify-content:space-between;padding:4px
 .chip.on{background:var(--text);color:var(--bg);border-color:var(--text)}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .card{background:var(--card);border-radius:var(--radius);overflow:hidden;border:1px solid var(--line);display:flex;flex-direction:column}
-.ph{position:relative;aspect-ratio:3/4;background:#1d1d20}
+.ph{position:relative;aspect-ratio:3/4;background:var(--ph)}
 .ph img{width:100%;height:100%;object-fit:cover}
-.add{position:absolute;right:8px;top:8px;width:32px;height:32px;border-radius:50%;background:rgba(12,12,13,.72);backdrop-filter:blur(6px);display:grid;place-items:center;font-size:18px;line-height:1}
+.add{position:absolute;right:8px;top:8px;width:32px;height:32px;border-radius:50%;background:var(--overlay);backdrop-filter:blur(6px);display:grid;place-items:center;font-size:18px;line-height:1}
 .add.on{background:var(--accent);color:var(--accent-ink)}
 .info{padding:10px 10px 12px;display:flex;flex-direction:column;gap:6px;flex:1}
 .t{font-size:12px;letter-spacing:.04em;text-transform:uppercase;font-weight:600;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
@@ -49,7 +48,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:4px
 .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .top h2{margin:0;font-size:13px;letter-spacing:.24em;text-transform:uppercase;font-weight:600}
 .x{width:36px;height:36px;border-radius:50%;border:1px solid var(--line);font-size:18px}
-.big{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:var(--radius);background:#1d1d20}
+.big{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:var(--radius);background:var(--ph)}
 .it-t{font-size:16px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin:14px 0 4px}
 .it-p{color:var(--accent);font-size:18px;font-weight:700;margin-bottom:14px}
 .lbl{font-size:12px;color:var(--muted);letter-spacing:.12em;text-transform:uppercase;margin:4px 0 8px}
@@ -58,7 +57,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:4px
 .sz.on{background:var(--text);color:var(--bg);border-color:var(--text)}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .line{display:flex;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}
-.line img{width:64px;height:84px;object-fit:cover;border-radius:10px;background:#1d1d20}
+.line img{width:64px;height:84px;object-fit:cover;border-radius:10px;background:var(--ph)}
 .line .m{flex:1;min-width:0}
 .line .t{-webkit-line-clamp:2}
 .check{width:26px;height:26px;border-radius:8px;border:1.5px solid var(--muted);display:grid;place-items:center;flex:none;font-size:15px}
@@ -75,7 +74,7 @@ textarea{width:100%;background:var(--card);color:var(--text);border:1px solid va
 @keyframes s{to{transform:rotate(360deg)}}
 .bar{width:220px;height:4px;background:var(--line);border-radius:4px;overflow:hidden}
 .bar i{display:block;height:100%;background:var(--accent);width:0;transition:width .6s}
-.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#222;border:1px solid var(--line);padding:10px 16px;border-radius:12px;font-size:13px;z-index:50;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90%;text-align:center}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--toast);color:#fff;border:1px solid var(--line);padding:10px 16px;border-radius:12px;font-size:13px;z-index:50;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90%;text-align:center}
 .toast.show{opacity:1}
 .style-h{display:flex;align-items:center;gap:8px;margin:22px 0 10px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
 .style-h b{color:var(--accent);font-weight:600}
@@ -87,11 +86,11 @@ textarea{width:100%;background:var(--card);color:var(--text);border:1px solid va
 .mini .t{font-size:11px}
 .mini .p{font-size:12px}
 .stxt{font-size:13px;color:var(--muted);margin:10px 0 0;line-height:1.45}
-.skel{height:14px;border-radius:6px;background:linear-gradient(90deg,#1b1b1e,#242428,#1b1b1e);background-size:200% 100%;animation:sk 1.2s infinite}
+.skel{height:14px;border-radius:6px;background:linear-gradient(90deg,var(--skel1),var(--skel2),var(--skel1));background-size:200% 100%;animation:sk 1.2s infinite}
 @keyframes sk{to{background-position:-200% 0}}
 .verdict{border:1px solid var(--line);background:var(--card);border-radius:var(--radius);padding:14px;margin:4px 0 12px}
 .verdict .v{font-weight:700;margin-bottom:6px}
-.verdict.good{border-color:#3d5a3a}.verdict.warn{border-color:#6b5328}
+.verdict.good{border-color:var(--good)}.verdict.warn{border-color:var(--warn)}
 .swap{display:flex;gap:10px;align-items:center;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
 .swap img{width:48px;height:64px;object-fit:cover;border-radius:8px}
 .swap .m{flex:1;font-size:12px}
@@ -106,7 +105,7 @@ textarea{width:100%;background:var(--card);color:var(--text);border:1px solid va
 <body>
 <div class="wrap">
   <header>
-    <div class="brand">Сила в Стиле<small>For man · примерочная</small></div>
+    <div class="brand">__BRAND__<small>__SUB__</small></div>
     <button class="me" id="meBtn" aria-label="Моё фото">👤</button>
   </header>
   <div class="hint" id="hint" hidden>
@@ -191,9 +190,10 @@ textarea{width:100%;background:var(--card);color:var(--text);border:1px solid va
 <div class="toast" id="toast"></div>
 
 <script>
+const BASE = "__BASE__", STYLIST = !!"__STYLIST__";
 const tg = window.Telegram && Telegram.WebApp;
 const INIT = (tg && tg.initData) || "";
-try { tg.ready(); tg.expand(); tg.setHeaderColor("#0c0c0d"); tg.setBackgroundColor("#0c0c0d"); } catch (e) {}
+try { tg.ready(); tg.expand(); tg.setHeaderColor("__BG__"); tg.setBackgroundColor("__BG__"); } catch (e) {}
 
 let ITEMS = [], CAT = "Все", ME = {has_photo:false, left:0, max_items:3}, cur = null;
 let CART = load("svs_cart", {});           // id -> {size, check}
@@ -215,7 +215,7 @@ async function api(path, opt={}){
 
 async function init(){
   $("empty").hidden = false;
-  const [it, me] = await Promise.all([api("/svs/api/items"), INIT ? api("/svs/api/me") : Promise.resolve({})]);
+  const [it, me] = await Promise.all([api(BASE + "/api/items"), INIT ? api(BASE + "/api/me") : Promise.resolve({})]);
   ITEMS = it.items || [];
   if (me.ok) ME = me;
   $("maxN").textContent = ME.max_items || 3;
@@ -223,13 +223,13 @@ async function init(){
   renderMe(); renderChips(); renderGrid(); renderCartBar();
   $("empty").textContent = ITEMS.length ? "" : "Витрина скоро наполнится — загляните чуть позже.";
   $("empty").hidden = !!ITEMS.length;
-  if (!INIT) toast("Откройте витрину из бота @sila_v_stile_bot, чтобы примерять");
+  if (!INIT) toast("Откройте витрину из бота @__BOT__, чтобы примерять");
 }
 
 let MYURL = "";
 async function myPhotoUrl(){
   if (MYURL) return MYURL;
-  const r = await fetch("/svs/api/myphoto", {headers: {"X-Init-Data": INIT}});
+  const r = await fetch(BASE + "/api/myphoto", {headers: {"X-Init-Data": INIT}});
   if (!r.ok) return "";
   MYURL = URL.createObjectURL(await r.blob()); return MYURL;
 }
@@ -290,7 +290,7 @@ function openItem(id){
 }
 const PAIRS = {};
 async function loadPairs(id){
-  if (!INIT || ITEMS.length < 3){ $("styleBox").hidden = true; return; }
+  if (!STYLIST || !INIT || ITEMS.length < 3){ $("styleBox").hidden = true; return; }
   $("styleBox").hidden = false;
   const draw = r => {
     if (cur.id !== id) return;
@@ -306,7 +306,7 @@ async function loadPairs(id){
   if (PAIRS[id]) return draw(PAIRS[id]);
   $("pairs").innerHTML = [1,2,3].map(()=>`<div class="mini"><div class="ph"></div><div class="info"><div class="skel"></div></div></div>`).join("");
   $("pairsTxt").textContent = "Стилист подбирает…";
-  const r = await api("/svs/api/style/pairs", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({id})});
+  const r = await api(BASE + "/api/style/pairs", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({id})});
   if (r.ok) PAIRS[id] = r;
   draw(r);
 }
@@ -339,7 +339,7 @@ function openCart(){
   const sum = ids.reduce((s,id)=>s+((ITEMS.find(x=>x.id===id)||{}).price||0),0);
   $("cartTotal").textContent = money(sum);
   const n = checked().length;
-  $("rateBtn").hidden = n < 2 || !INIT;
+  $("rateBtn").hidden = n < 2 || !INIT || !STYLIST;
   if (!openCart.keepVerdict) $("verdict").innerHTML = "";
   openCart.keepVerdict = false;
   $("tryOutfitBtn").disabled = !n;
@@ -348,7 +348,7 @@ function openCart(){
 }
 
 async function tryItems(ids){
-  if (!INIT){ toast("Откройте витрину из бота @sila_v_stile_bot"); return; }
+  if (!INIT){ toast("Откройте витрину из бота @__BOT__"); return; }
   if (!ME.has_photo){ toast("Сначала загрузите своё фото"); pickPhoto(ids); return; }
   if (!ids.length) return;
   haptic("medium");
@@ -356,7 +356,7 @@ async function tryItems(ids){
   $("tryBody").innerHTML = `<div class="loader"><div class="spin"></div><div id="tryStep">Готовим примерку…</div>
     <div class="bar"><i id="tryBar"></i></div><div class="note">Обычно 15–20 секунд на вещь</div></div>`;
   openSheet("trySheet");
-  const r = await api("/svs/api/tryon", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({items: ids})});
+  const r = await api(BASE + "/api/tryon", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({items: ids})});
   if (!r.ok){
     if (r.error==="nophoto"){ ME.has_photo=false; renderMe(); pickPhoto(ids); return; }
     if (r.error==="notsub") return notSub(r);
@@ -368,7 +368,7 @@ async function poll(job, total){
   const t0 = Date.now();
   while (Date.now() - t0 < 240000){
     await new Promise(r=>setTimeout(r, 2000));
-    const j = await api("/svs/api/job/" + job);
+    const j = await api(BASE + "/api/job/" + job);
     if (!j.ok) return tryFail(j.error);
     if (j.status === "running"){
       const step = Math.max(1, j.step||1);
@@ -400,7 +400,7 @@ function tryFail(msg){
 
 let afterPhoto = null;
 function pickPhoto(thenTry){
-  if (!INIT){ toast("Откройте витрину из бота @sila_v_stile_bot"); return; }
+  if (!INIT){ toast("Откройте витрину из бота @__BOT__"); return; }
   afterPhoto = thenTry || null; openSheet("guideSheet");
 }
 $("file").onchange = async () => {
@@ -408,7 +408,7 @@ $("file").onchange = async () => {
   toast("Загружаем фото…");
   try {
     const blob = await shrink(f, 1600);
-    const r = await api("/svs/api/photo", {method:"POST", headers:{"Content-Type":"image/jpeg"}, body: blob});
+    const r = await api(BASE + "/api/photo", {method:"POST", headers:{"Content-Type":"image/jpeg"}, body: blob});
     if (!r.ok) return toast(r.error || "Не удалось загрузить фото");
     ME.has_photo = true; MYURL = ""; renderMe(); haptic("medium");
     if ($("guideSheet").classList.contains("open")) closeSheets();
@@ -440,9 +440,9 @@ function openPhoto(){
   if (ME.has_photo) myPhotoUrl().then(u => { if (u) $("myImg").src = u; });
   openSheet("photoSheet");
 }
-$("meBtn").onclick = () => INIT ? openPhoto() : toast("Откройте витрину из бота @sila_v_stile_bot");
+$("meBtn").onclick = () => INIT ? openPhoto() : toast("Откройте витрину из бота @__BOT__");
 async function deletePhoto(){
-  const r = await api("/svs/api/photo", {method:"DELETE"});
+  const r = await api(BASE + "/api/photo", {method:"DELETE"});
   if (r.ok){ ME.has_photo = false; MYURL = ""; renderMe(); closeSheets(); toast("Фото удалено"); }
 }
 
@@ -450,7 +450,7 @@ async function rateOutfit(){
   const ids = checked(); if (ids.length < 2) return;
   haptic();
   $("verdict").innerHTML = `<div class="verdict"><div class="skel" style="width:60%;margin-bottom:10px"></div><div class="skel"></div></div>`;
-  const r = await api("/svs/api/style/outfit", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({items: ids})});
+  const r = await api(BASE + "/api/style/outfit", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({items: ids})});
   if (!r.ok){ $("verdict").innerHTML = `<div class="verdict">${esc(r.error||"Стилист недоступен")}</div>`; return; }
   let swap = "";
   if (r.swap){ const o = ITEMS.find(x=>x.id===r.swap.out), n = ITEMS.find(x=>x.id===r.swap.in);
@@ -471,7 +471,7 @@ async function sendOrder(){
   if (!items.length) return;
   const noSize = items.filter(x=>{ const it = ITEMS.find(i=>i.id===x.id); return it && (it.size_list||[]).length && !x.size; });
   if (noSize.length) return toast("Выберите размер для каждой вещи");
-  const r = await api("/svs/api/order", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({items, comment: $("comment").value})});
+  const r = await api(BASE + "/api/order", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({items, comment: $("comment").value})});
   if (!r.ok) return toast(r.error || "Не удалось оформить заказ");
   CART = {}; save(); renderGrid(); renderCartBar(); closeSheets(); haptic("heavy");
   try { tg.showAlert("Заказ принят! Менеджер скоро напишет вам в Telegram."); } catch(e){ toast("Заказ принят!"); }

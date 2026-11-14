@@ -24,13 +24,19 @@ import threading
 import time
 import urllib.parse
 
+import importlib
+
 import fashn
-import svs_bot as bot
-import svs_stylist as stylist
+import shops
+
+SHOP = globals().get("SHOP", "SVS")                     # второй магазин — тот же код (shops.py)
+bot = globals().get("_BOT") or importlib.import_module("svs_bot")
+stylist = globals().get("_STYLIST") or importlib.import_module("svs_stylist")
+BASE = bot.C["path"]
 
 HTML = os.path.join(os.path.dirname(os.path.abspath(__file__)), "svs_app.html")
 MAX_ITEMS = 3
-RDIR = os.path.join(bot.seedream.DIR, "svs_results")      # результаты примерок (имя файла — случайный id)
+RDIR = os.path.join(bot.seedream.DIR, f"{bot.C['store']}_results")      # результаты примерок (имя файла — случайный id)
 _jobs = {}
 
 # порядок надевания: низ → верх → верхняя одежда → обувь/аксессуары
@@ -54,7 +60,15 @@ def category(title):
     return w.capitalize() if w else "Другое"
 
 
+LETTERS = ["XXS", "XS", "S", "M", "L", "XL", "XXL", "3XL"]
+
+
 def size_list(s):
+    m = re.match(r"^\s*([A-Z0-9]{1,3})\s*[-–—]\s*([A-Z0-9]{1,3})\s*$", (s or "").upper().replace("2XL", "XXL"))
+    if m and m.group(1) in LETTERS and m.group(2) in LETTERS:     # буквенные размеры: XS - L
+        a, b = LETTERS.index(m.group(1)), LETTERS.index(m.group(2))
+        if a < b:
+            return LETTERS[a:b + 1]
     m = re.match(r"^\s*(\d{2})\s*[-–—]\s*(\d{2})\s*$", s or "")
     if m:
         a, b = int(m.group(1)), int(m.group(2))
@@ -105,7 +119,7 @@ def items():
     for iid, it in sorted(db["items"].items(), key=lambda kv: -kv[1].get("ts", 0)):
         out.append({"id": iid, "title": it["title"], "price": it["price"], "sizes": it.get("sizes", ""),
                     "size_list": size_list(it.get("sizes", "")), "cat": category(it["title"]),
-                    "img": f"/svs/img/{iid}.jpg?v=2-{it.get('ts', 0)}"})
+                    "img": f"{BASE}/img/{iid}.jpg?v=2-{it.get('ts', 0)}"})
     return out
 
 
@@ -161,7 +175,7 @@ def _run(jid, uid, its):
         os.makedirs(RDIR, exist_ok=True)
         with open(os.path.join(RDIR, jid + ".jpg"), "wb") as f:
             f.write(raw)
-        job.update(status="done", result=f"/svs/res/{jid}.jpg")
+        job.update(status="done", result=f"{BASE}/res/{jid}.jpg")
         total = sum(it["price"] for _, it in its)
         names = "\n".join(f"• {it['title']} — {bot.money(it['price'])}" for _, it in its)
         bot.send_photo_bytes(uid, raw, f"Ваша примерка ✨\n{names}" + (f"\n\nИтого: {bot.money(total)}" if len(its) > 1 else ""),
@@ -205,7 +219,7 @@ def order(u, data):
     for a in bot.ADMINS:
         bot.send(a, text)
     bot.send(int(u["id"]), "Заказ принят ✅\n" + "\n".join(rows) + f"\n\nИтого: {bot.money(total)}\n\n"
-             f"Менеджер скоро напишет вам. Или напишите сами: @{bot.MANAGER}")
+             "Менеджер скоро напишет вам." + (f" Или напишите сами: {bot.ASK}" if bot.MANAGER else ""))
     with bot._lock:
         db = bot._load()
         db["stats"]["orders"] = db["stats"].get("orders", 0) + 1
@@ -213,12 +227,24 @@ def order(u, data):
     return _js(200, {"ok": True})
 
 
+def page():
+    """svs_app.html с подстановкой магазина: префикс адресов, название, бот, цвета."""
+    with open(HTML, encoding="utf-8") as f:
+        html = f.read()
+    css, bg = shops.theme_css(SHOP)
+    c = bot.C
+    return (html.replace("__BASE__", BASE).replace("__BRAND__", c["name"]).replace("__SUB__", c["sub"])
+            .replace("__BOT__", bot.BOT_USERNAME or "").replace("__THEME__", css).replace("__BG__", bg)
+            .replace("__STYLIST__", "1" if stylist.ready() else "")).encode()
+
+
 def handle(method, path, query, headers, body):
     """Возвращает (код, content-type, байты)."""
     qs = dict(urllib.parse.parse_qsl(query or ""))
+    if path.startswith(BASE):                      # дальше все пути — без префикса магазина
+        path = "/svs" + path[len(BASE):]
     if method == "GET" and path in ("/svs", "/svs/"):
-        with open(HTML, "rb") as f:
-            return 200, "text/html; charset=utf-8", f.read()
+        return 200, "text/html; charset=utf-8", page()
     m = re.match(r"^/svs/res/([0-9a-f]{16})\.jpg$", path)
     if method == "GET" and m:
         p = os.path.join(RDIR, m.group(1) + ".jpg")
@@ -234,10 +260,11 @@ def handle(method, path, query, headers, body):
         return _js(200, {"ok": True, "items": items(), "manager": bot.MANAGER})
     u = auth(headers.get("X-Init-Data"))
     if not u:
-        return _js(401, {"ok": False, "error": "Откройте витрину из бота @sila_v_stile_bot"})
+        return _js(401, {"ok": False, "error": f"Откройте витрину из бота @{bot.BOT_USERNAME}"})
     uid = int(u["id"])
     if method == "GET" and path == "/svs/api/me":
         return _js(200, {"ok": True, "has_photo": bool(bot.user_photo(uid)), "left": left_today(uid),
+                         "stylist": bool(stylist.ready()),
                          "max_items": MAX_ITEMS})
     if method == "GET" and path == "/svs/api/myphoto":
         raw = bot.user_photo(uid)

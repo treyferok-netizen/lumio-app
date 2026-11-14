@@ -751,9 +751,9 @@ def _call(name, args, host):
         if out.get("ok") and args.get("outfit"):
             out["outfit"] = svs_stylist.outfit(args["outfit"])
         return _text(json.dumps(out, ensure_ascii=False))
-    if name == "svs_status":  # бот-примерочная «Сила в Стиле»
-        import svs_bot
-        return _text(json.dumps(svs_bot.status(), ensure_ascii=False))
+    if name == "svs_status":  # примерочные: args.shop = SVS (по умолчанию) или WL
+        import shops
+        return _text(json.dumps(shops.bot(args.get("shop") or "SVS").status(), ensure_ascii=False))
     if name.startswith("fashn_"):
         return fashn_tool(name, args, host)
     if name.startswith("eleven_"):
