@@ -352,6 +352,70 @@ def tryon_prompt(title):
             "under the garment on the mannequin. The garment must fit the person's body at realistic size." + _KEEP)
 
 
+# ---------------------------------------------------------------- чистка фото вещи (/clean N)
+CLEAN_PROMPT = ("Edit this product photo of a garment. Remove all hang tags, price tags, paper labels, cardboard "
+                "tags and plastic tag fasteners hanging from the garment. Neatly tie any loose strings, drawstrings and "
+                "belt ties in a small tidy bow or tuck them in. Keep the garment exactly the same: same shape, cut, "
+                "length, color, fabric texture, stitching, buttons, zippers, prints and logos. Keep the same camera "
+                "angle, framing and background. Photorealistic product photo, no new text.")
+
+
+def clean_path(iid):
+    return os.path.join(IDIR, f"{int(iid)}_clean.jpg")
+
+
+def tryon_image(iid):
+    """Фото вещи для примерки: очищенное (без бирок), если есть, иначе исходное."""
+    p = clean_path(iid)
+    if os.path.isfile(p):
+        with open(p, "rb") as f:
+            return f.read()
+    return item_image(iid)
+
+
+def clean_item(chat, iid):
+    it = _load()["items"].get(str(iid))
+    if not it:
+        return send(chat, "Нет такой вещи. Номера — /items")
+    if not seedream.ready():
+        return send(chat, "Seedream не подключён на сервере (SEEDREAM_API_KEY).")
+    send(chat, f"Чищу фото №{iid} «{it['title']}» — убираю бирки, завязываю шнурки. Около минуты ⏳ (≈4 ₽)")
+
+    def run():
+        try:
+            raw = item_image(iid)
+            import cv2
+            import numpy as np
+            img = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR)
+            h, w = img.shape[:2]
+            k = 2048 / max(h, w)
+            size = f"{int(w * k) // 16 * 16}x{int(h * k) // 16 * 16}"
+            out = _seedream_sized(raw, size)
+            seedream._add_used(1)
+            os.makedirs(IDIR, exist_ok=True)
+            with open(clean_path(iid), "wb") as f:
+                f.write(out)
+            send_photo_bytes(chat, out, f"Очищенное фото №{iid} «{it['title']}». Примерки этой вещи теперь идут по нему.",
+                             kb([btn("✅ Оставить", "noop")], [btn("↩️ Вернуть оригинал", f"unclean:{iid}")]))
+        except Exception as e:
+            print(f"{SHOP.lower()} clean error", iid, repr(e)[:300], flush=True)
+            send(chat, f"Не получилось почистить фото №{iid}: {str(e)[:200]}")
+    threading.Thread(target=run, daemon=True).start()
+
+
+def _seedream_sized(raw, size):
+    """Тот же запрос Seedream, но с размером под пропорции фото вещи."""
+    body = {"model": seedream.MODEL, "prompt": CLEAN_PROMPT, "size": size, "response_format": "b64_json",
+            "output_format": "jpeg", "watermark": False, "image": data_uri(raw)}
+    r = requests.post(seedream.BASE + "/images/generations", json=body, timeout=(10, 180),
+                      headers={"Authorization": "Bearer " + seedream.KEY, "Content-Type": "application/json"})
+    j = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+    if r.status_code != 200 or not j.get("data"):
+        err = j.get("error") if isinstance(j.get("error"), dict) else {"message": j.get("error") or r.text[:200]}
+        raise RuntimeError(f"Seedream {r.status_code}: {err.get('message', '')}")
+    return base64.b64decode(j["data"][0]["b64_json"])
+
+
 # ---------------------------------------------------------------- разбор постов
 def parse(caption):
     """Вещь = пост с фото и строкой «Цена …» (любая категория). Без цены — не товар (розыгрыш, новость)."""
@@ -387,10 +451,11 @@ def add_item(photo_id, caption, source, admin_chat=None):
                 v.update(info, photo=photo_id, source=source)
                 _save(db)
                 iid = k
-                try:
-                    os.remove(os.path.join(IDIR, f"{int(k)}.jpg"))   # фото могло смениться
-                except OSError:
-                    pass
+                for p_ in (os.path.join(IDIR, f"{int(k)}.jpg"), clean_path(k)):   # фото могло смениться
+                    try:
+                        os.remove(p_)
+                    except OSError:
+                        pass
                 break
         else:
             iid = str(int(max([0] + [int(k) for k in db["items"]])) + 1)
@@ -513,7 +578,7 @@ def try_on(chat, uid, iid, name):
         with _tryon_slots:
             try:
                 outs, used, secs = fashn.run(*tryon_request(it["title"], data_uri(user_photo(uid)),
-                                                            data_uri(item_image(iid))))
+                                                            data_uri(tryon_image(iid))))
                 if not outs:
                     raise RuntimeError("пустой ответ")
                 send_photo_bytes(chat, finish_tryon(uid, outs[0], [it["title"]]),
@@ -565,6 +630,12 @@ def admin_cmd(chat, text):
             it = db["items"].pop(n, None)
             _save(db)
         return send(chat, f"Удалил №{n}: {it['title']}" if it else "Нет такой вещи. Номера — /items")
+    if text.startswith("/clean"):
+        n = re.sub(r"\D", "", text)
+        if not n:
+            return send(chat, "Напишите номер вещи: /clean 14 — уберу бирки и завяжу шнурки на фото (≈4 ₽, один раз). "
+                              "Номера — /items")
+        return clean_item(chat, n)
     if text.startswith("/stats"):
         return send(chat, f"Вещей: {len(db['items'])}\nПокупателей: {len(db['users'])}\n"
                           f"Одобрено заявок в канал: {db['stats'].get('joins', 0)}\n"
@@ -605,6 +676,14 @@ def on_update(upd):
         chat, data = cq["message"]["chat"]["id"], cq.get("data", "")
         if data == "cat":
             return show_catalog(chat)
+        if data == "noop":
+            return
+        if data.startswith("unclean:") and cq["from"]["id"] in ADMINS:
+            try:
+                os.remove(clean_path(data[8:]))
+            except OSError:
+                pass
+            return send(chat, f"Вернул исходное фото для №{data[8:]}.")
         if data.startswith("more:"):
             return show_catalog(chat, int(data[5:]))
         if data.startswith("try:"):
@@ -619,7 +698,7 @@ def on_update(upd):
     is_admin = uid in ADMINS
     if is_admin and (msg.get("forward_origin") or msg.get("forward_from_chat")):
         return on_post(msg, admin_chat=chat)
-    if is_admin and text.startswith(("/items", "/del", "/stats")):
+    if is_admin and text.startswith(("/items", "/del", "/stats", "/clean")):
         return admin_cmd(chat, text)
     if text.startswith("/start"):
         return send(chat, welcome((msg.get("from") or {}).get("first_name", "")),
