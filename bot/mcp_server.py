@@ -751,6 +751,12 @@ def _call(name, args, host):
         if out.get("ok") and args.get("outfit"):
             out["outfit"] = svs_stylist.outfit(args["outfit"])
         return _text(json.dumps(out, ensure_ascii=False))
+    if name == "lumio_gpt_check":  # проверка ответа YandexGPT в боте Lumio (одна короткая генерация)
+        import index
+        t = time.time()
+        ans, need = index.ask_gpt(args.get("q") or "Сколько стоит мультфильм на 1 минуту?", None)
+        return _text(json.dumps({"model": index.MODEL, "answer": ans, "handoff": need,
+                                 "sec": round(time.time() - t, 1)}, ensure_ascii=False))
     if name == "svs_status":  # примерочные: args.shop = SVS (по умолчанию) или WL
         import shops
         return _text(json.dumps(shops.bot(args.get("shop") or "SVS").status(), ensure_ascii=False))

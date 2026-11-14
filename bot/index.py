@@ -11,7 +11,7 @@ Environment variables:
   PUBLIC_URL       this function's public link, e.g. https://functions.yandexcloud.net/d4e...
   ADMIN_CHAT_ID    your Telegram chat id (send /myid to the bot to learn it)
   FOLDER_ID        Yandex Cloud folder id (for YandexGPT)
-  GPT_MODEL        optional, default "yandexgpt-lite/latest"
+  GPT_MODEL        optional, default "yandexgpt/latest" (Pro 5.1; Lite 5 снята с поддержки 15.11.2026)
   YANDEX_API_KEY   optional; if empty, the function's service account token is used
   MINIAPP_URL      optional, default https://t.me/LumioMultBot/app
   CHANNEL          optional, default @lumioRF — подписчикам канала эскиз героя бесплатно
@@ -40,7 +40,11 @@ SECRET = os.environ.get("WEBHOOK_SECRET", "")
 PUBLIC_URL = os.environ.get("PUBLIC_URL", "").rstrip("/")
 ADMIN = os.environ.get("ADMIN_CHAT_ID", "").strip()
 FOLDER = os.environ.get("FOLDER_ID", "")
-MODEL = os.environ.get("GPT_MODEL", "yandexgpt-lite/latest")
+MODEL = os.environ.get("GPT_MODEL", "yandexgpt/latest")
+if MODEL.startswith("yandexgpt-lite"):
+    # YandexGPT Lite 5 Яндекс отключает 15.11.2026 — переходим на YandexGPT Pro 5.1 (тот же API и ключ)
+    print("GPT_MODEL", MODEL, "снята с поддержки — использую yandexgpt/latest", flush=True)
+    MODEL = "yandexgpt/latest"
 API_KEY = os.environ.get("YANDEX_API_KEY", "")
 MINIAPP_URL = os.environ.get("MINIAPP_URL", "https://t.me/LumioMultBot/app")
 WEBAPP_PAGE = os.environ.get("WEBAPP_PAGE", "https://treyferok-netizen.github.io/lumio-app/")
@@ -89,7 +93,7 @@ def diagnose(context):
                              "error": me.get("error") or me.get("description"), "sec": round(time.time() - t, 1)}
     t = time.time()
     ans, need = ask_gpt("Сколько стоит мультфильм на 1 минуту?", context)
-    out["yandexgpt"] = {"answer": ans, "handoff": need, "sec": round(time.time() - t, 1)}
+    out["yandexgpt"] = {"model": MODEL, "answer": ans, "handoff": need, "sec": round(time.time() - t, 1)}
     return out
 
 
@@ -279,7 +283,7 @@ def ask_gpt(question, context):
     }
     try:
         r = requests.post("https://llm.api.cloud.yandex.net/foundationModels/v1/completion",
-                          json=body, headers={**auth, "x-folder-id": FOLDER}, timeout=(5, 12))
+                          json=body, headers={**auth, "x-folder-id": FOLDER}, timeout=(5, 20))
         r.raise_for_status()
         text = r.json()["result"]["alternatives"][0]["message"]["text"].strip()
     except Exception as e:
