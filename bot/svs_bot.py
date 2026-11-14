@@ -68,6 +68,7 @@ APP_URL = _env("APP_URL").strip() or (os.environ.get("PUBLIC_BASE", "https://212
 PAGE = 5
 _lock = threading.Lock()
 _groups = {}            # media_group_id -> {"photo", "caption", "ts", "admin_chat"}
+_color_edits = {}       # личный чат администратора -> текущая вещь и шаг исправления
 _tryon_slots = threading.Semaphore(2)
 
 
@@ -647,23 +648,102 @@ def order(chat, frm, iid):
          reply_markup=kb([btn("Написать менеджеру", url=f"https://t.me/{MANAGER}")]) if MANAGER else None)
 
 
+def _color_session(chat, **values):
+    state = {"token": os.urandom(6).hex(), "ts": time.monotonic(), **values}
+    _color_edits[chat] = state
+    return state
+
+
+def _color_buttons(state, confirm=False):
+    rows = [[btn("Сохранить цвет", "colorsave:" + state["token"], style="success")]] if confirm else []
+    return kb(*rows, [btn("Отмена", "colorcancel:" + state["token"])])
+
+
+def _color_choose(chat):
+    state = _color_session(chat, stage="choose")
+    return send(chat, "Введите номер вещи из /items — например, 16.\nМожно сразу написать /color 16.",
+                reply_markup=_color_buttons(state))
+
+
+def _color_begin(chat, iid, it):
+    state = _color_session(chat, stage="value", iid=iid, source=stylist()._source(it), title=it["title"])
+    color = stylist().description(it).get("color") or "неизвестно"
+    return send(chat, f"Вещь №{iid}: <b>{html.escape(it['title'])}</b>\n"
+                      f"Текущий цвет: {html.escape(str(color))}.\n\n"
+                      "Пришлите новый цвет отдельным сообщением, например: тёмно-коричневый.",
+                reply_markup=_color_buttons(state))
+
+
+def _color_reply(chat, text):
+    state = _color_edits.get(chat)
+    if not state:
+        return False
+    if time.monotonic() - state["ts"] > 900:
+        _color_edits.pop(chat, None)
+        send(chat, "Время редактирования истекло. Начните заново: /color номер")
+        return True
+    if state["stage"] == "choose":
+        _description_command(chat, "/color " + text)
+        return True
+    if state["stage"] == "confirm":
+        send(chat, "Подтвердите цвет кнопкой «Сохранить цвет» или выберите другую вещь: /color номер.",
+             reply_markup=_color_buttons(state, confirm=True))
+        return True
+    color = " ".join(text.split())
+    if not color or len(color) > 80 or re.search(r"[<>\x00-\x1f]", color) or not any(c.isalpha() for c in color):
+        send(chat, "Пришлите название цвета, например: коричневый. Отмена — /cancel.")
+        return True
+    state.update(stage="confirm", color=color)
+    send(chat, f"Вещь №{state['iid']}: <b>{html.escape(state['title'])}</b>\n"
+               f"Новый цвет: <b>{html.escape(color)}</b>.", reply_markup=_color_buttons(state, confirm=True))
+    return True
+
+
+def _color_callback(chat, uid, data):
+    if uid not in ADMINS or uid != chat or SHOP != "SVS":
+        return
+    action, token = data.split(":", 1)
+    state = _color_edits.get(chat)
+    if not state or state["token"] != token:
+        return send(chat, "Это редактирование уже завершено. Начать новое: /color номер")
+    if action == "colorcancel":
+        _color_edits.pop(chat, None)
+        return send(chat, "Редактирование цвета отменено.")
+    if time.monotonic() - state["ts"] > 900 or state["stage"] != "confirm":
+        _color_edits.pop(chat, None)
+        return send(chat, "Начните редактирование заново: /color номер")
+    _color_edits.pop(chat, None)           # повторный клик не выполняет повторную запись
+    try:
+        value = stylist().correct_color(state["iid"], state["color"], expected_source=state["source"])
+    except ValueError as e:
+        return send(chat, html.escape(str(e)))
+    return send(chat, f"✅ Вещь №{state['iid']}: <b>{html.escape(state['title'])}</b>\n"
+                      f"Цвет сохранён: {html.escape(value)}.\nОцените образ заново.")
+
+
 def _description_command(chat, text):
     if SHOP != "SVS":
         return send(chat, "Исправление описаний пока доступно в «Силе в Стиле».")
     match = re.fullmatch(r"/(passport|color)(?:@\w+)?(?:\s+([\s\S]+))?", text)
     if not match:
-        return send(chat, "Команды: /passport номер или название; /color номер или название | цвет")
+        return send(chat, "Команды: /passport 16 — описание; /color 16 — изменить цвет вещи №16")
     command, query = match.group(1), (match.group(2) or "").strip()
     color = None
     if command == "color":
-        if "|" not in query:
-            return send(chat, "Например: /color КОФТА KITON | тёмно-коричневый. Номера вещей — /items")
-        query, color = (part.strip() for part in query.split("|", 1))
+        if "|" in query:
+            query, color = (part.strip() for part in query.split("|", 1))
+        elif not query:
+            return _color_choose(chat)
     if not query:
-        return send(chat, "Укажите номер или название вещи, например: /passport КОФТА KITON")
+        return send(chat, "Укажите номер вещи из /items, например: /passport 16")
     db = _load()
-    if query.isdecimal():
-        ids = [query] if query in db["items"] else []
+    number = re.fullmatch(r"(?:№|#)?\s*([0-9]+)(?:\s+(.+))?", query)
+    if number:
+        iid = str(int(number.group(1)))
+        ids = [iid] if iid in db["items"] else []
+        if ids and number.group(2) and " ".join(number.group(2).casefold().split()) != " ".join(db["items"][iid]["title"].casefold().split()):
+            return send(chat, f"Под №{iid} записана вещь {html.escape(db['items'][iid]['title'])}.\n"
+                              f"Для выбора именно её отправьте /{command} {iid}.")
     else:
         normalize = lambda value: " ".join(value.casefold().split())
         needle = normalize(query)
@@ -677,8 +757,10 @@ def _description_command(chat, text):
     iid, st = ids[0], stylist()
     it = db["items"][iid]
     if command == "color":
+        if color is None:
+            return _color_begin(chat, iid, it)
         try:
-            value = st.correct_color(iid, color)
+            value = st.correct_color(iid, color, expected_source=st._source(it))
         except ValueError as e:
             return send(chat, html.escape(str(e)))
         return send(chat, f"✅ №{iid} {html.escape(it['title'])}\nПодтверждённый цвет: {html.escape(value)}.\n"
@@ -690,7 +772,7 @@ def _description_command(chat, text):
     saved = (it.get("ai") or {}).get("color") or "не определён"
     return send(chat, f"№{iid} <b>{html.escape(it['title'])}</b>\n" + "\n".join(rows) +
                       f"\n\nИсходный цвет из анализа: {html.escape(str(saved))}.\n"
-                      f"Исправить: /color {iid} | нужный цвет")
+                      f"Исправить цвет: /color {iid}")
 
 
 def admin_cmd(chat, text):
@@ -751,6 +833,10 @@ def on_update(upd):
     if cq:
         tg("answerCallbackQuery", {"callback_query_id": cq["id"]})
         chat, data = cq["message"]["chat"]["id"], cq.get("data", "")
+        if data.startswith(("colorsave:", "colorcancel:")):
+            return _color_callback(chat, cq["from"]["id"], data)
+        if cq["from"]["id"] in ADMINS:
+            _color_edits.pop(chat, None)
         if data == "cat":
             return show_catalog(chat)
         if data == "noop":
@@ -779,12 +865,22 @@ def on_update(upd):
     chat, uid, text = msg["chat"]["id"], msg["from"]["id"], (msg.get("text") or "").strip()
     is_admin = uid in ADMINS
     command = text.split(maxsplit=1)[0].split("@", 1)[0] if text else ""
+    forwarded = msg.get("forward_origin") or msg.get("forward_from_chat")
+    if is_admin and (text.startswith("/") or forwarded):
+        _color_edits.pop(chat, None)
+    if is_admin and command == "/cancel":
+        return send(chat, "Редактирование отменено.")
     if text == "/" or command == "/help":
         return send(chat, command_help(is_admin))
     if is_admin and (msg.get("forward_origin") or msg.get("forward_from_chat")):
         return on_post(msg, admin_chat=chat)
     if is_admin and text.startswith(("/items", "/del", "/stats", "/clean", "/passport", "/color")):
         return admin_cmd(chat, text)
+    if is_admin and chat in _color_edits:
+        if not text:
+            return send(chat, "Пришлите номер или цвет текстом. Отмена — /cancel.")
+        if _color_reply(chat, text):
+            return
     if text.startswith("/start"):
         return send(chat, welcome((msg.get("from") or {}).get("first_name", "")),
                     reply_markup=kb([app_btn("🛍 Открыть витрину")],
@@ -828,8 +924,9 @@ def command_menu(admin=False):
         ])
         if SHOP == "SVS":
             commands.extend([
-                {"command": "passport", "description": "Описание вещи: /passport номер или название"},
-                {"command": "color", "description": "Исправить цвет: /color номер | цвет"},
+                {"command": "passport", "description": "Описание вещи по номеру: /passport 16"},
+                {"command": "color", "description": "Изменить цвет вещи по номеру: /color 16"},
+                {"command": "cancel", "description": "Отменить текущее редактирование"},
             ])
     return commands
 
@@ -839,7 +936,8 @@ def command_help(admin=False):
     if admin:
         rows.extend(["", "Примеры:", "/clean 14", "/del 14"])
         if SHOP == "SVS":
-            rows.extend(["/passport КОФТА KITON", "/color КОФТА KITON | тёмно-коричневый"])
+            rows.extend(["/passport 16", "/color 16 — выбрать вещь и ввести цвет следующим сообщением",
+                         "/color 16 | коричневый — сохранить сразу", "/cancel — отменить редактирование"])
     return "Доступные команды:\n\n" + "\n".join(rows)
 
 

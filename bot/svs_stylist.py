@@ -214,7 +214,7 @@ def description(it):
     return ai
 
 
-def correct_color(iid, color):
+def correct_color(iid, color, expected_source=None):
     """Меняем только выбранную вещь. Исправление не перезаписывается фоновым анализом."""
     color = re.sub(r"\s+", " ", str(color or "")).strip()
     if not color or len(color) > 80 or re.search(r"[<>\x00-\x1f]", color):
@@ -224,6 +224,8 @@ def correct_color(iid, color):
         it = db["items"].get(str(iid))
         if not it:
             raise ValueError("Вещь не найдена.")
+        if expected_source is not None and _source(it) != expected_source:
+            raise ValueError("Вещь изменилась. Выберите её заново по номеру.")
         old = _manual(it)
         values = dict(old.get("values") or {})
         values["color"] = color
