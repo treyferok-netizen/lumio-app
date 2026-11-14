@@ -304,7 +304,8 @@ _PROMPTS = [
     (r"^(КОЛЬЕ|ПОДВЕСК|ЦЕПОЧК|ЦЕПЬ|ЧОКЕР|БУСЫ|ОЖЕРЕЛЬ)", "Put the necklace from the product photo on the person's neck at "
                                                         "realistic scale, lying naturally over their clothes or skin."),
     (r"^(КОЛЬЦ)", "Put the ring from the product photo on the person's finger at realistic, small scale."),
-    (r"^(КРОССОВ|КЕД|ТУФЛ|ЛОФЕР|МОКАСИН|БОТИН|САПОГ|СЛИП|ДЕРБИ|ОКСФОРД|ЧЕЛСИ|САНДАЛ|ШЛ[ЁЕ]П|ОБУВ)",
+    (r"^(КРОССОВ|КЕД|ТУФЛ|ЛОФЕР|МОКАСИН|БОТИН|БОТИЛЬОН|БОТФОРТ|САПОГ|СЛИП|ДЕРБИ|ОКСФОРД|ЧЕЛСИ|САНДАЛ|БОСОНОЖ|"
+     r"БАЛЕТК|МЮЛИ|ЭСПАДРИЛ|ШЛ[ЁЕ]П|ОБУВ)",
      "Replace only the shoes the person is wearing with the shoes from the product photo. The new shoes must be a "
      "realistic size: exactly the same length and height as the person's current shoes, proportional to their feet and "
      "body, not oversized, not chunky, not enlarged. Keep the trouser hems falling over the shoes as before."),
