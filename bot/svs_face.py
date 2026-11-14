@@ -119,3 +119,28 @@ def restore(original, result):
     except Exception as e:
         print("svs face error", repr(e)[:200], flush=True)
         return result
+
+
+def check_photo(raw):
+    """Подсказка по фото покупателя (или None, если всё хорошо). Фото всё равно сохраняется."""
+    try:
+        img = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR)
+        if img is None:
+            return "Не получилось прочитать фото — попробуйте другое."
+        h, w = img.shape[:2]
+        if min(h, w) < 500:
+            return "Фото маленькое — примерка выйдет нечёткой. Лучше загрузить фото в обычном качестве."
+        if w > h * 1.05:
+            return "Фото горизонтальное — для примерки лучше вертикальное фото в полный рост."
+        faces = _faces(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY))
+        big = [f for f in faces if f[3] > h * 0.03]
+        if len(big) > 1 and big[1][3] > big[0][3] * 0.6:
+            return "Похоже, на фото несколько человек — для примерки нужен только вы."
+        if not big:
+            return "Не видно лица — встаньте лицом к камере, так примерка получится точнее."
+        if big[0][3] / h > 0.16:
+            return "Похоже, фото не в полный рост. Чтобы примерять брюки и обувь, нужно фото с головы до ног."
+        return None
+    except Exception as e:
+        print("svs check_photo error", repr(e)[:200], flush=True)
+        return None

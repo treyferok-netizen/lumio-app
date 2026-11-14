@@ -95,6 +95,9 @@ textarea{width:100%;background:var(--card);color:var(--text);border:1px solid va
 .swap{display:flex;gap:10px;align-items:center;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
 .swap img{width:48px;height:64px;object-fit:cover;border-radius:8px}
 .swap .m{flex:1;font-size:12px}
+.guide{display:flex;flex-direction:column;gap:10px;margin:4px 0 14px}
+.g-row{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:11px 12px;font-size:14px;line-height:1.4}
+.g-row.no{color:var(--muted)}
 .cartbar{position:fixed;left:12px;right:12px;bottom:calc(14px + env(safe-area-inset-bottom));z-index:10;display:none}
 .cartbar.show{display:block}
 .cartbar .btn{box-shadow:0 8px 30px rgba(0,0,0,.5)}
@@ -166,6 +169,22 @@ textarea{width:100%;background:var(--card);color:var(--text);border:1px solid va
     <button class="btn gold" onclick="pickPhoto()">Загрузить новое фото</button>
     <button class="btn ghost" id="delPhoto" onclick="deletePhoto()" hidden>Удалить моё фото</button>
   </div>
+</div></section>
+
+<!-- как сфотографироваться -->
+<section class="sheet" id="guideSheet"><div class="in">
+  <div class="top"><h2>Фото для примерки</h2><button class="x" onclick="closeSheets()">✕</button></div>
+  <div class="guide">
+    <div class="g-row ok">✅ <span><b>В полный рост</b> — от макушки до обуви, целиком в кадре</span></div>
+    <div class="g-row ok">✅ <span><b>Лицом к камере</b>, стоя прямо; можно селфи в зеркале</span></div>
+    <div class="g-row ok">✅ <span><b>Руки чуть в стороны</b> — не скрещены и не в карманах</span></div>
+    <div class="g-row ok">✅ <span><b>Простая одежда</b> по фигуре: футболка, джинсы — без объёмной куртки</span></div>
+    <div class="g-row ok">✅ <span><b>Хороший свет</b> и спокойный фон</span></div>
+    <div class="g-row no">❌ <span>По пояс, сидя, в профиль, с другими людьми в кадре</span></div>
+    <div class="g-row no">❌ <span>Тёмное, размытое или сильно обрезанное фото</span></div>
+  </div>
+  <div class="note">Фото видите только вы — оно используется только для примерки и удаляется по кнопке «Удалить моё фото».</div>
+  <div class="stack"><button class="btn gold" onclick="$('file').value=''; $('file').click()">Выбрать фото</button></div>
 </div></section>
 
 <input type="file" id="file" accept="image/*" hidden>
@@ -382,7 +401,7 @@ function tryFail(msg){
 let afterPhoto = null;
 function pickPhoto(thenTry){
   if (!INIT){ toast("Откройте витрину из бота @sila_v_stile_bot"); return; }
-  afterPhoto = thenTry || null; $("file").value = ""; $("file").click();
+  afterPhoto = thenTry || null; openSheet("guideSheet");
 }
 $("file").onchange = async () => {
   const f = $("file").files[0]; if (!f) return;
@@ -391,7 +410,17 @@ $("file").onchange = async () => {
     const blob = await shrink(f, 1600);
     const r = await api("/svs/api/photo", {method:"POST", headers:{"Content-Type":"image/jpeg"}, body: blob});
     if (!r.ok) return toast(r.error || "Не удалось загрузить фото");
-    ME.has_photo = true; MYURL = ""; renderMe(); toast("Фото сохранено ✓"); haptic("medium");
+    ME.has_photo = true; MYURL = ""; renderMe(); haptic("medium");
+    if ($("guideSheet").classList.contains("open")) closeSheets();
+    if (r.warn){
+      const pending = afterPhoto; afterPhoto = null;
+      try { tg.showPopup({title:"Фото сохранено", message: r.warn + "\n\nПримерять можно, но лучше заменить фото.",
+                          buttons:[{id:"new", type:"default", text:"Загрузить другое"}, {id:"ok", type:"default", text:"Оставить"}]},
+                         id => { if (id === "new") pickPhoto(pending); else if (pending) tryItems(pending); }); }
+      catch(e){ toast(r.warn); if (pending) tryItems(pending); }
+      return;
+    }
+    toast("Фото сохранено ✓");
     if ($("photoSheet").classList.contains("open")) openPhoto();
     if (afterPhoto){ const ids = afterPhoto; afterPhoto = null; tryItems(ids); }
   } catch(e){ toast("Не удалось обработать фото"); }

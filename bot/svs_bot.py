@@ -576,7 +576,12 @@ def on_update(upd):
         return send(chat, "Ваше фото удалено.")
     if msg.get("photo") or (msg.get("document") or {}).get("mime_type", "").startswith("image/"):
         fid = (msg["photo"][-1]["file_id"] if msg.get("photo") else msg["document"]["file_id"])
-        save_user_photo(uid, file_bytes(fid))
+        raw = file_bytes(fid)
+        save_user_photo(uid, raw)
+        import svs_face
+        warn = svs_face.check_photo(raw)
+        if warn:
+            send(chat, "⚠️ " + warn + "\nФото сохранено, но лучше заменить — просто пришлите новое.")
         with _lock:
             db = _load()
             user(db, uid)

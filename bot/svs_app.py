@@ -250,7 +250,8 @@ def handle(method, path, query, headers, body):
             if not body or len(body) > 12 * 1024 * 1024 or body[:2] != b"\xff\xd8":
                 return _js(400, {"ok": False, "error": "Нужно фото (JPEG)"})
             bot.save_user_photo(uid, body)
-            return _js(200, {"ok": True})
+            import svs_face
+            return _js(200, {"ok": True, "warn": svs_face.check_photo(body)})
     if method == "POST" and path == "/svs/api/tryon":
         return start_tryon(u, (json.loads(body or b"{}").get("items") or []))
     m = re.match(r"^/svs/api/job/([0-9a-f]+)$", path)
