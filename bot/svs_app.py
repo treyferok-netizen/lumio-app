@@ -113,13 +113,21 @@ def left_today(uid):
     return max(0, bot.DAILY - u["used"])
 
 
+def _clean_ver(iid):
+    """Меняется, когда фото очищено командой /clean или возвращено — телефон перезапросит картинку."""
+    try:
+        return int(os.path.getmtime(bot.clean_path(iid)))
+    except OSError:
+        return 0
+
+
 def items():
     db = bot._load()
     out = []
     for iid, it in sorted(db["items"].items(), key=lambda kv: -kv[1].get("ts", 0)):
         out.append({"id": iid, "title": it["title"], "price": it["price"], "sizes": it.get("sizes", ""),
                     "size_list": size_list(it.get("sizes", "")), "cat": category(it["title"]),
-                    "img": f"{BASE}/img/{iid}.jpg?v=2-{it.get('ts', 0)}"})
+                    "img": f"{BASE}/img/{iid}.jpg?v=2-{it.get('ts', 0)}-{_clean_ver(iid)}"})
     return out
 
 
@@ -250,7 +258,7 @@ def handle(method, path, query, headers, body):
         return 404, "text/plain", b""
     m = re.match(r"^/svs/img/(\d+)\.jpg$", path)
     if method == "GET" and m:
-        raw = bot.item_image(m.group(1))
+        raw = bot.tryon_image(m.group(1))       # очищенное фото (/clean), если есть, иначе исходное
         return (200, "image/jpeg", raw) if raw else (404, "text/plain", b"")
     if method == "GET" and path == "/svs/api/items":
         return _js(200, {"ok": True, "items": items(), "manager": bot.MANAGER})

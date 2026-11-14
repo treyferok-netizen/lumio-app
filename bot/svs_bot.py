@@ -395,7 +395,7 @@ def clean_item(chat, iid):
             os.makedirs(IDIR, exist_ok=True)
             with open(clean_path(iid), "wb") as f:
                 f.write(out)
-            send_photo_bytes(chat, out, f"Очищенное фото №{iid} «{it['title']}». Примерки этой вещи теперь идут по нему.",
+            send_photo_bytes(chat, out, f"Очищенное фото №{iid} «{it['title']}». Теперь оно в витрине и в примерке.",
                              kb([btn("✅ Оставить", f"keepclean:{iid}")], [btn("↩️ Вернуть оригинал", f"unclean:{iid}")]))
         except Exception as e:
             print(f"{SHOP.lower()} clean error", iid, repr(e)[:300], flush=True)
@@ -683,7 +683,7 @@ def on_update(upd):
             tg("editMessageReplyMarkup", {"chat_id": chat, "message_id": cq["message"]["message_id"],
                                           "reply_markup": {"inline_keyboard": []}})
             if data.startswith("keepclean:"):
-                return send(chat, f"✅ Готово: примерки №{n} идут по очищенному фото.")
+                return send(chat, f"✅ Готово: №{n} в витрине и примерке — с очищенным фото.")
             try:
                 os.remove(clean_path(n))
             except OSError:
