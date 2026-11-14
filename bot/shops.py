@@ -29,7 +29,7 @@ SHOPS = {
             "manager": "romanov_roman_svs", "bot": "sila_v_stile_bot", "female": False, "emoji": "🖤",
             "theme": "dark", "delivery": "🚚 Доставка с примеркой по Москве, отправка по России."},
     "WL": {"name": "Women's Line", "sub": "примерочная", "path": "/wl", "store": "wl",
-           "manager": "", "bot": "", "female": True, "emoji": "🤍",
+           "manager": "romanov_roman_svs", "bot": "Womens_line_bot", "female": True, "emoji": "🤍",
            "theme": "light", "delivery": "🚚 Доставка по России."},
 }
 
