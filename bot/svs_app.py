@@ -30,6 +30,7 @@ import svs_stylist as stylist
 
 HTML = os.path.join(os.path.dirname(os.path.abspath(__file__)), "svs_app.html")
 MAX_ITEMS = 3
+RDIR = os.path.join(bot.seedream.DIR, "svs_results")      # результаты примерок (имя файла — случайный id)
 _jobs = {}
 
 # порядок надевания: низ → верх → верхняя одежда → обувь/аксессуары
@@ -156,12 +157,15 @@ def _run(jid, uid, its):
                     raise RuntimeError("пустой ответ FASHN")
                 model = outs[0]          # следующая вещь надевается на результат
                 done += 1
-        job.update(status="done", result=model)
+        raw = bot.finish_tryon(uid, model)            # лицо покупателя — с исходного фото
+        os.makedirs(RDIR, exist_ok=True)
+        with open(os.path.join(RDIR, jid + ".jpg"), "wb") as f:
+            f.write(raw)
+        job.update(status="done", result=f"/svs/res/{jid}.jpg")
         total = sum(it["price"] for _, it in its)
         names = "\n".join(f"• {it['title']} — {bot.money(it['price'])}" for _, it in its)
-        bot.tg("sendPhoto", {"chat_id": uid, "photo": model, "parse_mode": "HTML",
-                             "caption": f"Ваша примерка ✨\n{names}" + (f"\n\nИтого: {bot.money(total)}" if len(its) > 1 else ""),
-                             "reply_markup": bot.kb([bot.app_btn("🛍 Вернуться в витрину")])}, timeout=(5, 60))
+        bot.send_photo_bytes(uid, raw, f"Ваша примерка ✨\n{names}" + (f"\n\nИтого: {bot.money(total)}" if len(its) > 1 else ""),
+                             bot.kb([bot.app_btn("🛍 Вернуться в витрину")]))
         with bot._lock:
             db = bot._load()
             db["stats"]["tryons"] = db["stats"].get("tryons", 0) + done
@@ -215,6 +219,13 @@ def handle(method, path, query, headers, body):
     if method == "GET" and path in ("/svs", "/svs/"):
         with open(HTML, "rb") as f:
             return 200, "text/html; charset=utf-8", f.read()
+    m = re.match(r"^/svs/res/([0-9a-f]{16})\.jpg$", path)
+    if method == "GET" and m:
+        p = os.path.join(RDIR, m.group(1) + ".jpg")
+        if os.path.isfile(p):
+            with open(p, "rb") as f:
+                return 200, "image/jpeg", f.read()
+        return 404, "text/plain", b""
     m = re.match(r"^/svs/img/(\d+)\.jpg$", path)
     if method == "GET" and m:
         raw = bot.item_image(m.group(1))

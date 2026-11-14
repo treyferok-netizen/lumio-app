@@ -63,7 +63,12 @@ def _save(db):
 
 def status():
     db = _load()
-    return {"token": bool(TOKEN), "fashn": fashn.ready(), "admins": sorted(ADMINS), "items": len(db["items"]),
+    try:
+        import svs_face
+        face = os.path.basename(svs_face._cascade_path()) if svs_face.ENABLED else "off"
+    except Exception as e:
+        face = "error: " + repr(e)[:120]
+    return {"token": bool(TOKEN), "fashn": fashn.ready(), "face_restore": face, "admins": sorted(ADMINS), "items": len(db["items"]),
             "users": len(db["users"]), "stats": db["stats"],
             "last_items": [f'{k}: {v["title"]} — {v["price"]}' for k, v in list(db["items"].items())[-10:]]}
 
@@ -80,6 +85,33 @@ def tg(method, data=None, timeout=(5, 15)):
     if not r.get("ok"):
         print("svs tg", method, r.get("description"), flush=True)
     return r
+
+
+def send_photo_bytes(chat, raw, caption="", reply_markup=None):
+    """sendPhoto файлом (а не ссылкой) — для результатов примерки, обработанных на сервере."""
+    data = {"chat_id": str(chat), "caption": caption, "parse_mode": "HTML"}
+    if reply_markup:
+        data["reply_markup"] = json.dumps(reply_markup, ensure_ascii=False)
+    try:
+        r = requests.post(API + "sendPhoto", data=data, files={"photo": ("tryon.jpg", raw, "image/jpeg")},
+                          timeout=(5, 60)).json()
+    except Exception as e:
+        print("svs sendPhoto error", repr(e)[:200].replace(TOKEN, "<t>"), flush=True)
+        return {"ok": False}
+    if not r.get("ok") and "style" in data.get("reply_markup", ""):
+        data["reply_markup"] = data["reply_markup"].replace('"style":', '"_style":')
+        r = requests.post(API + "sendPhoto", data=data, files={"photo": ("tryon.jpg", raw, "image/jpeg")},
+                          timeout=(5, 60)).json()
+    return r
+
+
+def finish_tryon(uid, url):
+    """Скачать результат FASHN и вернуть на него лицо покупателя с исходного фото."""
+    import svs_face
+    r = requests.get(url, timeout=(10, 60))
+    r.raise_for_status()
+    orig = user_photo(uid)
+    return svs_face.restore(orig, r.content) if orig else r.content
 
 
 def btn(text, data=None, url=None, style=None):
@@ -395,12 +427,11 @@ def try_on(chat, uid, iid, name):
                     "prompt": prompt, "resolution": "1k", "generation_mode": "fast", "output_format": "jpeg"})
                 if not outs:
                     raise RuntimeError("пустой ответ")
-                tg("sendPhoto", {"chat_id": chat, "photo": outs[0], "parse_mode": "HTML",
-                                 "caption": f"<b>{it['title']}</b> — {money(it['price'])}"
-                                            + (f"\nРазмеры: {it['sizes']}" if it.get("sizes") else ""),
-                                 "reply_markup": kb([btn("Заказать", f"ord:{iid}", style="success")],
-                                                    [btn("Примерить другую вещь", "cat", style="primary")])},
-                   timeout=(5, 60))
+                send_photo_bytes(chat, finish_tryon(uid, outs[0]),
+                                 f"<b>{it['title']}</b> — {money(it['price'])}"
+                                 + (f"\nРазмеры: {it['sizes']}" if it.get("sizes") else ""),
+                                 kb([btn("Заказать", f"ord:{iid}", style="success")],
+                                    [btn("Примерить другую вещь", "cat", style="primary")]))
                 with _lock:
                     db = _load()
                     db["stats"]["tryons"] = db["stats"].get("tryons", 0) + 1
