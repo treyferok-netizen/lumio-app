@@ -386,10 +386,25 @@ def flush_groups():
 
 
 # ---------------------------------------------------------------- покупатель
-WELCOME = ("👋 Это примерочная <b>Сила в Стиле</b>.\n\n"
-           "Откройте витрину, загрузите своё фото в полный рост и примерьте любую вещь — "
-           "или соберите образ из нескольких и примерьте его целиком.\n\n"
-           "Фото используется только для примерки. Удалить его: /delete_photo")
+DESCRIPTION = ("Примерочная магазина «Сила в Стиле» 🖤\n\n"
+               "Примерьте любую вещь из нашего канала на себя — по своему фото, за 20 секунд. "
+               "Соберите образ, узнайте мнение стилиста и закажите с доставкой по России.\n\n"
+               "Нажмите «Старт», чтобы начать.")
+SHORT_DESCRIPTION = "Примерьте вещи «Сила в Стиле» на себя по своему фото — бесплатно для подписчиков канала."
+
+
+def welcome(name):
+    return (f"Привет{', ' + name if name else ''}! 👋\n\n"
+            "Добро пожаловать в примерочную <b>Сила в Стиле</b> — здесь можно примерить вещи из нашего канала "
+            "на себя, не выходя из дома.\n\n"
+            "<b>Как это работает:</b>\n"
+            "1️⃣ Откройте витрину и загрузите своё фото в полный рост\n"
+            "2️⃣ Нажмите «Примерить» на любой вещи — через 20 секунд увидите себя в ней\n"
+            "3️⃣ Соберите образ из нескольких вещей и спросите стилиста, как они сочетаются\n"
+            "4️⃣ Понравилось — оформите заказ прямо в витрине\n\n"
+            "🚚 Доставка с примеркой по Москве, отправка по России.\n"
+            f"Вопросы — @{MANAGER}\n\n"
+            "<i>Фото используется только для примерки. Удалить его: /delete_photo</i>")
 
 
 def user(db, uid):
@@ -551,7 +566,9 @@ def on_update(upd):
     if is_admin and text.startswith(("/items", "/del", "/stats")):
         return admin_cmd(chat, text)
     if text.startswith("/start"):
-        return send(chat, WELCOME, reply_markup=kb([app_btn()], [btn("Каталог в чате", "cat")]))
+        return send(chat, welcome((msg.get("from") or {}).get("first_name", "")),
+                    reply_markup=kb([app_btn("🛍 Открыть витрину")],
+                                    [btn("Каталог в чате", "cat"), btn("Менеджер", url=f"https://t.me/{MANAGER}")]))
     if text.startswith(("/catalog", "Каталог")):
         return show_catalog(chat)
     if text.startswith("/delete_photo"):
@@ -572,6 +589,8 @@ def on_update(upd):
 
 def poll():
     tg("deleteWebhook", {"drop_pending_updates": False})
+    tg("setMyDescription", {"description": DESCRIPTION})
+    tg("setMyShortDescription", {"short_description": SHORT_DESCRIPTION})
     tg("setChatMenuButton", {"menu_button": {"type": "web_app", "text": "Витрина", "web_app": {"url": APP_URL}}})
     tg("setMyCommands", {"commands": [{"command": "catalog", "description": "Каталог и примерка"},
                                       {"command": "start", "description": "Как пользоваться"},
