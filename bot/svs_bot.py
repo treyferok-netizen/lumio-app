@@ -338,7 +338,7 @@ def tryon_request(title, model_image, product_image):
         for rx, cat in _CAT:
             if re.match(rx, t):
                 return "tryon-v1.6", {"model_image": model_image, "garment_image": product_image, "category": cat,
-                                      "mode": os.environ.get(f"{SHOP}_CLOTHES_MODE", "balanced"), "output_format": "jpeg"}
+                                      "mode": os.environ.get(f"{SHOP}_CLOTHES_MODE", "quality"), "output_format": "jpeg"}
     return "tryon-max", {"model_image": model_image, "product_image": product_image, "prompt": tryon_prompt(title),
                          "resolution": "1k", "generation_mode": "fast", "output_format": "jpeg"}
 
