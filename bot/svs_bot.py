@@ -114,10 +114,13 @@ def finish_tryon(uid, url, titles=()):
     import svs_face
     r = requests.get(url, timeout=(10, 60))
     r.raise_for_status()
-    if any(HEADWEAR.match((t or "").strip()) for t in titles):
-        return r.content
     orig = user_photo(uid)
-    return svs_face.restore(orig, r.content) if orig else r.content
+    if not orig:
+        return r.content
+    raw = svs_face.match_aspect(orig, r.content)        # пропорции как на исходном фото — без «вытягивания»
+    if any(HEADWEAR.match((t or "").strip()) for t in titles):
+        return raw
+    return svs_face.restore(orig, raw)
 
 
 def btn(text, data=None, url=None, style=None):

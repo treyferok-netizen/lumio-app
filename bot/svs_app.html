@@ -355,7 +355,7 @@ async function poll(job, total){
     if (j.status === "error") return tryFail(j.error);
     ME.left = Math.max(0, (ME.left||0) - total);
     haptic("heavy");
-    $("tryBody").innerHTML = `<img class="big" src="${j.result}" alt="Примерка">
+    $("tryBody").innerHTML = `<img class="big" style="aspect-ratio:auto;object-fit:contain" src="${j.result}" alt="Примерка">
       <div class="note">Фото примерки отправлено вам в чат с ботом — его можно сохранить или переслать.</div>
       <div class="stack"><button class="btn gold" onclick="closeSheets(); openCart()">${Object.keys(CART).length?"Перейти в корзину":"Закрыть"}</button>
       <button class="btn ghost" onclick="closeSheets()">Примерить другое</button></div>`;
@@ -402,7 +402,7 @@ function shrink(file, side){
   });
 }
 function openPhoto(){
-  $("myImg").hidden = !ME.has_photo; $("delPhoto").hidden = !ME.has_photo;
+  $("myImg").hidden = !ME.has_photo; $("myImg").style.cssText = "aspect-ratio:auto;object-fit:contain"; $("delPhoto").hidden = !ME.has_photo;
   if (ME.has_photo) myPhotoUrl().then(u => { if (u) $("myImg").src = u; });
   openSheet("photoSheet");
 }

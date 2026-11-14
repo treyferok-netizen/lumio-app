@@ -43,6 +43,28 @@ def _faces(gray):
     return sorted(found, key=lambda f: -f[2] * f[3])
 
 
+def match_aspect(original, result):
+    """FASHN приводит кадр к 3:4 растяжением, а не обрезкой, поэтому человек получается чуть вытянутым или
+    приплюснутым. Возвращаем результату пропорции исходного фото (сжимаем/растягиваем по ширине)."""
+    try:
+        src = cv2.imdecode(np.frombuffer(original, np.uint8), cv2.IMREAD_COLOR)
+        dst = cv2.imdecode(np.frombuffer(result, np.uint8), cv2.IMREAD_COLOR)
+        if src is None or dst is None:
+            return result
+        sh, sw = src.shape[:2]
+        dh, dw = dst.shape[:2]
+        want_w = int(round(dh * sw / sh))
+        if abs(want_w - dw) <= 2 or not (0.5 < want_w / dw < 2.0):
+            return result
+        out = cv2.resize(dst, (want_w, dh), interpolation=cv2.INTER_LANCZOS4 if want_w > dw else cv2.INTER_AREA)
+        ok, buf = cv2.imencode(".jpg", out, [cv2.IMWRITE_JPEG_QUALITY, 93])
+        print(f"svs aspect: {dw}x{dh} -> {want_w}x{dh}", flush=True)
+        return buf.tobytes() if ok else result
+    except Exception as e:
+        print("svs aspect error", repr(e)[:200], flush=True)
+        return result
+
+
 def restore(original, result):
     if not ENABLED:
         return result
