@@ -392,6 +392,18 @@ def kling_upload(args):
         return _err("upload_url должен быть адресом Kling (https://…kling…).")
     url = args.get("file_url", "")
     p = file_path(url.rsplit("/files/", 1)[-1]) if "/files/" in url else None
+    m = re.match(r"^userphoto:(\w+):(\d+)$", url)
+    if m:                                   # фото админа из примерочной (только админа магазина — для тестов)
+        import shops
+        b = shops.bot(m.group(1))
+        if int(m.group(2)) not in b.ADMINS:
+            return _err("Можно загружать только фото администратора магазина.")
+        data = b.user_photo(int(m.group(2)))
+        if not data:
+            return _err("Фото не найдено.")
+        r = requests.post(up, data={"ticket": args["ticket"]}, files={"file": ("photo.jpg", data, "image/jpeg")},
+                          timeout=(30, 300))
+        return (_text if r.ok else _err)(f"Kling HTTP {r.status_code}: {r.text[:1500]}")
     if p:                                   # наш файл — читаем с диска
         with open(p, "rb") as f:
             data = f.read()
