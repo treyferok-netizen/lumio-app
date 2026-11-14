@@ -320,6 +320,29 @@ _PROMPTS = [
 ]
 
 
+# Одежда — классическая модель tryon-v1.6: меняет только вещь, а лицо, позу и фон оставляет как на фото.
+# Обувь и аксессуары — tryon-max (v1.6 их не умеет). Вернуть всё на tryon-max: lumio-set SVS_CLOTHES_MODEL max
+_CAT = [
+    (r"^(КОСТЮМ|КОМПЛЕКТ|ТРОЙК|ДВОЙК|ПЛАТЬ|САРАФАН|КОМБИНЕЗОН)", "one-pieces"),
+    (r"^(БРЮК|ДЖИНС|ШОРТ|ЧИНОС|КАРГО|ЮБК|ЛОСИН|ЛЕГГИН|КЮЛОТ|ПАЛАЦЦО)", "bottoms"),
+    (r"^(МАЙК|БЛУЗ|ТОП|КОРСЕТ|БОДИ|ФУТБОЛК|ПОЛО|РУБАШК|СОРОЧК|ЛОНГСЛИВ|ВОДОЛАЗК|ДЖЕМПЕР|СВИТЕР|КАРДИГАН|ХУДИ|"
+     r"СВИТШОТ|ТОЛСТОВК|ОЛИМПИЙК|КОФТ|ТРИКОТАЖ|ЖИЛЕТ|ПИДЖАК|ЖАКЕТ|БЛЕЙЗЕР|КУРТК|БОМБЕР|ВЕТРОВК|ПАРК|ПУХОВИК|"
+     r"ПАЛЬТО|ПЛАЩ|ДУБЛ[ЁЕ]НК|ШУБ|ОВЕРШОТ|ТРЕНЧ|АНОРАК)", "tops"),
+]
+
+
+def tryon_request(title, model_image, product_image):
+    """(модель FASHN, входные данные) для вещи с таким названием."""
+    t = (title or "").strip().upper()
+    if os.environ.get(f"{SHOP}_CLOTHES_MODEL", "v1.6").strip().lower() != "max":
+        for rx, cat in _CAT:
+            if re.match(rx, t):
+                return "tryon-v1.6", {"model_image": model_image, "garment_image": product_image, "category": cat,
+                                      "mode": os.environ.get(f"{SHOP}_CLOTHES_MODE", "balanced"), "output_format": "jpeg"}
+    return "tryon-max", {"model_image": model_image, "product_image": product_image, "prompt": tryon_prompt(title),
+                         "resolution": "1k", "generation_mode": "fast", "output_format": "jpeg"}
+
+
 def tryon_prompt(title):
     t = (title or "").strip().upper()
     for rx, text in _PROMPTS:
@@ -489,10 +512,8 @@ def try_on(chat, uid, iid, name):
     def run():
         with _tryon_slots:
             try:
-                prompt = tryon_prompt(it["title"])
-                outs, used, secs = fashn.run("tryon-max", {
-                    "model_image": data_uri(user_photo(uid)), "product_image": data_uri(item_image(iid)),
-                    "prompt": prompt, "resolution": "1k", "generation_mode": "fast", "output_format": "jpeg"})
+                outs, used, secs = fashn.run(*tryon_request(it["title"], data_uri(user_photo(uid)),
+                                                            data_uri(item_image(iid))))
                 if not outs:
                     raise RuntimeError("пустой ответ")
                 send_photo_bytes(chat, finish_tryon(uid, outs[0], [it["title"]]),

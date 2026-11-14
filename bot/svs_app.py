@@ -162,11 +162,7 @@ def _run(jid, uid, its):
             model = bot.data_uri(bot.user_photo(uid))
             for n, (iid, it) in enumerate(its, 1):
                 job["step"] = n
-                prompt = bot.tryon_prompt(it["title"])
-                outs, _, _ = fashn.run("tryon-max", {"model_image": model,
-                                                     "product_image": bot.data_uri(bot.item_image(iid)),
-                                                     "prompt": prompt, "resolution": "1k",
-                                                     "generation_mode": "fast", "output_format": "jpeg"})
+                outs, _, _ = fashn.run(*bot.tryon_request(it["title"], model, bot.data_uri(bot.item_image(iid))))
                 if not outs:
                     raise RuntimeError("пустой ответ FASHN")
                 model = outs[0]          # следующая вещь надевается на результат
