@@ -396,7 +396,7 @@ def clean_item(chat, iid):
             with open(clean_path(iid), "wb") as f:
                 f.write(out)
             send_photo_bytes(chat, out, f"Очищенное фото №{iid} «{it['title']}». Примерки этой вещи теперь идут по нему.",
-                             kb([btn("✅ Оставить", "noop")], [btn("↩️ Вернуть оригинал", f"unclean:{iid}")]))
+                             kb([btn("✅ Оставить", f"keepclean:{iid}")], [btn("↩️ Вернуть оригинал", f"unclean:{iid}")]))
         except Exception as e:
             print(f"{SHOP.lower()} clean error", iid, repr(e)[:300], flush=True)
             send(chat, f"Не получилось почистить фото №{iid}: {str(e)[:200]}")
@@ -678,12 +678,17 @@ def on_update(upd):
             return show_catalog(chat)
         if data == "noop":
             return
-        if data.startswith("unclean:") and cq["from"]["id"] in ADMINS:
+        if data.startswith(("keepclean:", "unclean:")) and cq["from"]["id"] in ADMINS:
+            n = data.split(":", 1)[1]
+            tg("editMessageReplyMarkup", {"chat_id": chat, "message_id": cq["message"]["message_id"],
+                                          "reply_markup": {"inline_keyboard": []}})
+            if data.startswith("keepclean:"):
+                return send(chat, f"✅ Готово: примерки №{n} идут по очищенному фото.")
             try:
-                os.remove(clean_path(data[8:]))
+                os.remove(clean_path(n))
             except OSError:
                 pass
-            return send(chat, f"Вернул исходное фото для №{data[8:]}.")
+            return send(chat, f"↩️ Вернул исходное фото для №{n}.")
         if data.startswith("more:"):
             return show_catalog(chat, int(data[5:]))
         if data.startswith("try:"):
