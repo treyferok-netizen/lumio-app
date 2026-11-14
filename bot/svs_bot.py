@@ -194,9 +194,9 @@ def is_subscriber(uid):
     """True — подписан (или проверка выключена/невозможна, чтобы не ломать примерку)."""
     if not SUBS_ONLY or uid in ADMINS:
         return True
-    hit = _subs_cache.get(uid)
-    if hit and time.time() - hit[1] < 600:
-        return hit[0]
+    hit = _subs_cache.get(uid)              # помним только «подписан»: отказ проверяем заново каждый раз
+    if hit and time.time() - hit < 600:
+        return True
     cid = channel_id()
     if not cid:
         return True
@@ -205,7 +205,10 @@ def is_subscriber(uid):
         return True                    # бот не админ канала или Telegram недоступен — не мешаем покупателю
     st = r["result"].get("status")
     ok = st in ("creator", "administrator", "member") or (st == "restricted" and r["result"].get("is_member"))
-    _subs_cache[uid] = (ok, time.time())
+    if ok:
+        _subs_cache[uid] = time.time()
+    else:
+        print("svs not subscribed", uid, "channel", cid, "status", st, flush=True)
     return ok
 
 
