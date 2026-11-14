@@ -229,7 +229,7 @@ function renderGrid(){
   const list = ITEMS.filter(x=>CAT==="Все"||x.cat===CAT);
   $("grid").innerHTML = list.map(x=>`
     <div class="card">
-      <div class="ph" data-open="${x.id}"><img loading="lazy" src="${x.img}" alt="">
+      <div class="ph" data-open="${x.id}"><img loading="lazy" src="${x.img}" alt="" onerror="retryImg(this)">
         <button class="add ${CART[x.id]?"on":""}" data-add="${x.id}" aria-label="В корзину">${CART[x.id]?"✓":"+"}</button></div>
       <div class="info" data-open="${x.id}"><div class="t">${esc(x.title)}</div><div class="p">${money(x.price)}</div>
         <button class="btn ghost sm" data-try="${x.id}">Примерить</button></div>
@@ -240,6 +240,11 @@ function renderGrid(){
     if (t){ e.stopPropagation(); tryItems([t.dataset.try]); return; }
     if (o) openItem(o.dataset.open);
   };
+}
+function retryImg(img){            // первая загрузка фото с Telegram бывает медленной — пробуем ещё 2 раза
+  const n = +(img.dataset.retry||0); if (n >= 2) return;
+  img.dataset.retry = n + 1;
+  setTimeout(()=>{ img.src = img.src.split("?")[0] + "?r=" + Date.now(); }, 1500 * (n + 1));
 }
 function renderCartBar(){
   const ids = Object.keys(CART);

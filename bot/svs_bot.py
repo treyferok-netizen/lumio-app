@@ -172,6 +172,13 @@ def data_uri(raw, side=2048):
     return "data:image/jpeg;base64," + base64.b64encode(raw).decode()
 
 
+def _safe(fn, *a):
+    try:
+        return fn(*a)
+    except Exception as e:
+        print("svs bg error", fn.__name__, repr(e)[:200].replace(TOKEN, "<t>"), flush=True)
+
+
 def photo_path(uid):
     return os.path.join(UDIR, f"{int(uid)}.jpg")
 
@@ -332,6 +339,8 @@ def add_item(photo_id, caption, source, admin_chat=None):
             iid = str(int(max([0] + [int(k) for k in db["items"]])) + 1)
             db["items"][iid] = {**info, "photo": photo_id, "source": source, "ts": int(time.time())}
             _save(db)
+    # Сразу кэшируем фото для витрины, чтобы первый покупатель не ждал загрузки из Telegram
+    threading.Thread(target=lambda: _safe(item_image, iid), daemon=True).start()
     # Уведомляем после сохранения и вне _lock: запрос OpenAI выполняется фоном.
     import svs_stylist
     svs_stylist.catalog_changed(iid)
