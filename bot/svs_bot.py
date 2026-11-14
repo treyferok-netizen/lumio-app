@@ -17,6 +17,7 @@
 Фото покупателя хранится только как file_id Telegram; удалить — /delete_photo.
 """
 import base64
+import html
 import json
 import os
 import re
@@ -646,8 +647,56 @@ def order(chat, frm, iid):
          reply_markup=kb([btn("Написать менеджеру", url=f"https://t.me/{MANAGER}")]) if MANAGER else None)
 
 
+def _description_command(chat, text):
+    if SHOP != "SVS":
+        return send(chat, "Исправление описаний пока доступно в «Силе в Стиле».")
+    match = re.fullmatch(r"/(passport|color)(?:@\w+)?(?:\s+([\s\S]+))?", text)
+    if not match:
+        return send(chat, "Команды: /passport номер или название; /color номер или название | цвет")
+    command, query = match.group(1), (match.group(2) or "").strip()
+    color = None
+    if command == "color":
+        if "|" not in query:
+            return send(chat, "Например: /color КОФТА KITON | тёмно-коричневый. Номера вещей — /items")
+        query, color = (part.strip() for part in query.split("|", 1))
+    if not query:
+        return send(chat, "Укажите номер или название вещи, например: /passport КОФТА KITON")
+    db = _load()
+    if query.isdecimal():
+        ids = [query] if query in db["items"] else []
+    else:
+        normalize = lambda value: " ".join(value.casefold().split())
+        needle = normalize(query)
+        exact = [i for i, it in db["items"].items() if normalize(it["title"]) == needle]
+        ids = exact or [i for i, it in db["items"].items() if needle in normalize(it["title"])]
+    if not ids:
+        return send(chat, "Вещь не найдена. Проверьте название или номер: /items")
+    if len(ids) > 1:
+        rows = [f"№{i}: {html.escape(db['items'][i]['title'])}" for i in ids[:15]]
+        return send(chat, "Найдено несколько вещей. Укажите нужный номер:\n" + "\n".join(rows))
+    iid, st = ids[0], stylist()
+    it = db["items"][iid]
+    if command == "color":
+        try:
+            value = st.correct_color(iid, color)
+        except ValueError as e:
+            return send(chat, html.escape(str(e)))
+        return send(chat, f"✅ №{iid} {html.escape(it['title'])}\nПодтверждённый цвет: {html.escape(value)}.\n"
+                          "Оцените образ заново: связанные оценки обновятся. Повторный анализ фото не нужен.")
+    ai = st.description(it)
+    labels = {"type": "Тип", "color": "Цвет", "material": "Фактура", "style": "Стиль",
+              "season": "Сезон", "pattern": "Рисунок", "fit": "Крой", "details": "Детали"}
+    rows = [f"{label}: {html.escape(str(ai.get(key) or 'неизвестно'))}" for key, label in labels.items()]
+    saved = (it.get("ai") or {}).get("color") or "не определён"
+    return send(chat, f"№{iid} <b>{html.escape(it['title'])}</b>\n" + "\n".join(rows) +
+                      f"\n\nИсходный цвет из анализа: {html.escape(str(saved))}.\n"
+                      f"Исправить: /color {iid} | нужный цвет")
+
+
 def admin_cmd(chat, text):
     db = _load()
+    if text.startswith(("/passport", "/color")):
+        return _description_command(chat, text)
     if text.startswith("/items"):
         rows = [f"№{k} {v['title']} — {money(v['price'])}" for k, v in db["items"].items()]
         return send(chat, "\n".join(rows[-50:]) or "Каталог пуст.")
@@ -731,7 +780,7 @@ def on_update(upd):
     is_admin = uid in ADMINS
     if is_admin and (msg.get("forward_origin") or msg.get("forward_from_chat")):
         return on_post(msg, admin_chat=chat)
-    if is_admin and text.startswith(("/items", "/del", "/stats", "/clean")):
+    if is_admin and text.startswith(("/items", "/del", "/stats", "/clean", "/passport", "/color")):
         return admin_cmd(chat, text)
     if text.startswith("/start"):
         return send(chat, welcome((msg.get("from") or {}).get("first_name", "")),
@@ -797,5 +846,3 @@ def start():
     threading.Thread(target=poll, daemon=True).start()
     threading.Thread(target=flush_groups, daemon=True).start()
     stylist().start()
-
-
