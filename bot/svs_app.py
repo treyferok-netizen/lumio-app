@@ -1,4 +1,4 @@
-"""Мини-приложение «Сила в Стиле»: витрина, корзина, примерка вещи или образа (цепочка FASHN), заказ.
+"""Мини-приложение «Сила в Стиле»: витрина, корзина, примерка GPT Image / FASHN, заказ.
 
 Адрес: https://<сервер>/svs/   (кнопка «Витрина» в @sila_v_stile_bot)
 API (всё, что про покупателя, — с заголовком X-Init-Data = Telegram.WebApp.initData):
@@ -27,6 +27,7 @@ import urllib.parse
 import importlib
 
 import fashn
+import gpt_tryon
 import shops
 
 SHOP = globals().get("SHOP", "SVS")                     # второй магазин — тот же код (shops.py)
@@ -134,7 +135,7 @@ def items():
 def start_tryon(u, ids):
     uid = int(u["id"])
     db = bot._load()
-    ids = [str(i) for i in ids if str(i) in db["items"]][:MAX_ITEMS]
+    ids = list(dict.fromkeys(str(i) for i in ids if str(i) in db["items"]))[:MAX_ITEMS]
     if not ids:
         return _js(400, {"ok": False, "error": "Выберите вещи для примерки"})
     if not bot.is_subscriber(uid):
@@ -144,10 +145,12 @@ def start_tryon(u, ids):
         return _js(400, {"ok": False, "error": clash})
     if not bot.user_photo(uid):
         return _js(400, {"ok": False, "error": "nophoto"})
-    if not fashn.ready():
+    if not bot.tryon_ready():
         return _js(503, {"ok": False, "error": "Примерочная настраивается, попробуйте позже"})
     with bot._lock:
         db = bot._load()
+        if any(i not in db["items"] for i in ids):
+            return _js(409, {"ok": False, "error": "Каталог изменился. Выберите вещи заново."})
         usr = bot.user(db, uid)
         if uid not in bot.ADMINS and usr["used"] + len(ids) > bot.DAILY:
             left = max(0, bot.DAILY - usr["used"])
@@ -156,7 +159,7 @@ def start_tryon(u, ids):
         bot._save(db)
     its = sorted(((i, db["items"][i]) for i in ids), key=lambda kv: layer(kv[1]["title"]))
     jid = secrets.token_hex(8)
-    _jobs[jid] = {"uid": uid, "status": "running", "step": 0, "total": len(its), "ts": time.time(),
+    _jobs[jid] = {"uid": uid, "status": "running", "step": 0, "total": len(its), "engine": bot.tryon_provider(), "ts": time.time(),
                   "titles": [it["title"] for _, it in its]}
     threading.Thread(target=_run, args=(jid, uid, its), daemon=True).start()
     return _js(200, {"ok": True, "job": jid, "total": len(its)})
@@ -167,31 +170,41 @@ def _run(jid, uid, its):
     done = 0
     try:
         with bot._tryon_slots:
-            model = bot.data_uri(bot.user_photo(uid))
-            for n, (iid, it) in enumerate(its, 1):
-                job["step"] = n
-                outs, _, _ = fashn.run(*bot.tryon_request(it["title"], model, bot.data_uri(bot.tryon_image(iid))))
-                if not outs:
-                    raise RuntimeError("пустой ответ FASHN")
-                model = outs[0]          # следующая вещь надевается на результат
-                done += 1
-        raw = bot.finish_tryon(uid, model, [it["title"] for _, it in its])   # лицо покупателя — с исходного фото
+            if job["engine"] == "gpt":
+                job["step"] = 1
+                raw, _, _ = bot.gpt_outfit(uid, its)
+            else:
+                model = bot.data_uri(bot.user_photo(uid))
+                for n, (iid, it) in enumerate(its, 1):
+                    job["step"] = n
+                    outs, _, _ = fashn.run(*bot.tryon_request(it["title"], model, bot.data_uri(bot.tryon_image(iid))))
+                    if not outs:
+                        raise RuntimeError("пустой ответ FASHN")
+                    model = outs[0]          # прежняя последовательная примерка FASHN
+                    done += 1
+                raw = bot.finish_tryon(uid, model, [it["title"] for _, it in its])
         os.makedirs(RDIR, exist_ok=True)
         with open(os.path.join(RDIR, jid + ".jpg"), "wb") as f:
             f.write(raw)
-        job.update(status="done", result=f"{BASE}/res/{jid}.jpg")
-        total = sum(it["price"] for _, it in its)
-        names = "\n".join(f"• {it['title']} — {bot.money(it['price'])}" for _, it in its)
-        bot.send_photo_bytes(uid, raw, f"Ваша примерка ✨\n{names}" + (f"\n\nИтого: {bot.money(total)}" if len(its) > 1 else ""),
-                             bot.kb([bot.app_btn("🛍 Вернуться в витрину")]))
         with bot._lock:
             db = bot._load()
-            db["stats"]["tryons"] = db["stats"].get("tryons", 0) + done
+            db["stats"]["tryons"] = db["stats"].get("tryons", 0) + len(its)
             _bump_outfits(db, len(its))
             bot._save(db)
+        done = len(its)
+        job.update(status="done", step=len(its), result=f"{BASE}/res/{jid}.jpg")
+        total = sum(it["price"] for _, it in its)
+        names = "\n".join(f"• {it['title']} — {bot.money(it['price'])}" for _, it in its)
+        try:
+            # Ошибка доставки уведомления не отменяет уже доступный в витрине результат.
+            bot.send_photo_bytes(uid, raw, f"Ваша примерка ✨\n{names}" + (f"\n\nИтого: {bot.money(total)}" if len(its) > 1 else ""),
+                                 bot.kb([bot.app_btn("🛍 Вернуться в витрину")]))
+        except Exception as e:
+            print("svs tryon notification error", gpt_tryon.safe_error(e, SHOP), flush=True)
     except Exception as e:
-        print("svs app tryon error", repr(e)[:300], flush=True)
-        job.update(status="error", error="Не получилось примерить. Попробуйте другое фото: в полный рост, лицом к камере.")
+        print("svs app tryon error", gpt_tryon.safe_error(e, SHOP), flush=True)
+        job.update(status="error", error=e.public_message if isinstance(e, gpt_tryon.GPTImageError) else
+                   "Не получилось примерить. Попробуйте другое фото: в полный рост, лицом к камере.")
         with bot._lock:                      # неудачные шаги не списываем
             db = bot._load()
             usr = bot.user(db, uid)
@@ -290,7 +303,7 @@ def handle(method, path, query, headers, body):
         job = _jobs.get(m.group(1))
         if not job or job["uid"] != uid:
             return _js(404, {"ok": False, "error": "Примерка не найдена"})
-        return _js(200, {"ok": True, **{k: job.get(k) for k in ("status", "step", "total", "result", "error", "titles")}})
+        return _js(200, {"ok": True, **{k: job.get(k) for k in ("status", "step", "total", "engine", "result", "error", "titles")}})
     if method == "POST" and path in ("/svs/api/style/pairs", "/svs/api/style/outfit"):
         if not stylist.ready():
             return _js(503, {"ok": False, "error": "Стилист пока не подключён"})
@@ -311,3 +324,4 @@ def handle(method, path, query, headers, body):
     if method == "POST" and path == "/svs/api/order":
         return order(u, json.loads(body or b"{}"))
     return _js(404, {"ok": False, "error": "not found"})
+

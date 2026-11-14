@@ -354,7 +354,7 @@ async function tryItems(ids){
   haptic("medium");
   const titles = ids.map(id=>(ITEMS.find(x=>x.id===id)||{}).title||"");
   $("tryBody").innerHTML = `<div class="loader"><div class="spin"></div><div id="tryStep">Готовим примерку…</div>
-    <div class="bar"><i id="tryBar"></i></div><div class="note">Обычно 15–20 секунд на вещь</div></div>`;
+    <div class="bar"><i id="tryBar"></i></div><div class="note">Создание примерки может занять несколько минут</div></div>`;
   openSheet("trySheet");
   const r = await api(BASE + "/api/tryon", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({items: ids})});
   if (!r.ok){
@@ -366,21 +366,22 @@ async function tryItems(ids){
 }
 async function poll(job, total){
   const t0 = Date.now();
-  while (Date.now() - t0 < 240000){
+  while (Date.now() - t0 < 600000){
     await new Promise(r=>setTimeout(r, 2000));
     const j = await api(BASE + "/api/job/" + job);
     if (!j.ok) return tryFail(j.error);
     if (j.status === "running"){
       const step = Math.max(1, j.step||1);
-      $("tryStep") && ($("tryStep").textContent = total>1 ? `Надеваем ${step} из ${total}: ${(j.titles||[])[step-1]||""}` : `Надеваем: ${(j.titles||[])[0]||""}`);
-      $("tryBar") && ($("tryBar").style.width = Math.min(95, ((step-1)/total*100) + ((Date.now()-t0)/1000 % 18)/18*(100/total)) + "%");
+      $("tryStep") && ($("tryStep").textContent = j.engine === "gpt" ? "Создаём ваш образ целиком…" : (total>1 ? `Надеваем ${step} из ${total}: ${(j.titles||[])[step-1]||""}` : `Надеваем: ${(j.titles||[])[0]||""}`));
+      const progress = j.engine === "gpt" ? 90 * (1 - Math.exp(-(Date.now()-t0)/90000)) : ((step-1)/total*100) + ((Date.now()-t0)/1000 % 18)/18*(100/total);
+      $("tryBar") && ($("tryBar").style.width = Math.min(95, progress) + "%");
       continue;
     }
     if (j.status === "error") return tryFail(j.error);
     ME.left = Math.max(0, (ME.left||0) - total);
     haptic("heavy");
     $("tryBody").innerHTML = `<img class="big" style="aspect-ratio:auto;object-fit:contain" src="${j.result}" alt="Примерка">
-      <div class="note">Фото примерки отправлено вам в чат с ботом — его можно сохранить или переслать.</div>
+      <div class="note">Сохраните готовую примерку. Также отправляем её в чат с ботом.</div>
       <div class="stack"><button class="btn gold" onclick="closeSheets(); openCart()">${Object.keys(CART).length?"Перейти в корзину":"Закрыть"}</button>
       <button class="btn ghost" onclick="closeSheets()">Примерить другое</button></div>`;
     return;
@@ -492,3 +493,4 @@ init();
 </script>
 </body>
 </html>
+

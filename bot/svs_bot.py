@@ -1,11 +1,14 @@
-"""Бот-примерочная «Сила в Стиле» (@sila_v_stile_bot): каталог из канала + примерка FASHN.
+"""Бот-примерочная «Сила в Стиле» (@sila_v_stile_bot): каталог из канала + примерка GPT Image.
 
 Настройки (lumio-set ИМЯ ЗНАЧЕНИЕ):
   SVS_BOT_TOKEN     токен бота из @BotFather (без него бот выключен)
   SVS_ADMIN_IDS     id админов через запятую (по умолчанию ADMIN_CHAT_ID)
   SVS_MANAGER       username для заказов, по умолчанию romanov_roman_svs
   SVS_DAILY_FREE    бесплатных примерок в день на человека, по умолчанию 3
-  FASHN_API_KEY     ключ FASHN (см. fashn.py)
+  OPENAI_API_KEY    ключ OpenAI для примерки GPT Image
+  SVS_IMAGE_MODEL  gpt-image-2.5-sunburst по умолчанию
+  SVS_TRYON_PROVIDER  gpt по умолчанию; fashn — ручной выбор прежнего движка
+  FASHN_API_KEY     ключ для магазинов с TRYON_PROVIDER=fashn
 
 Каталог пополняется сам:
   • бот — администратор канала: каждый пост с фото и строкой «Цена …» становится вещью;
@@ -23,6 +26,7 @@ import time
 import requests
 
 import fashn
+import gpt_tryon
 import seedream
 import shops
 
@@ -92,7 +96,9 @@ def status():
         face = "error: " + repr(e)[:120]
     return {"shop": SHOP, "brand": BRAND, "bot": BOT_USERNAME, "app": APP_URL, "manager": MANAGER,
             "channel": channel_id(), "channel_link": bool(CHANNEL_LINK),
-            "token": bool(TOKEN), "fashn": fashn.ready(), "face_restore": face, "admins": sorted(ADMINS), "items": len(db["items"]),
+            "token": bool(TOKEN), "fashn": fashn.ready(), "tryon_engine": tryon_provider(),
+            "tryon_ready": tryon_ready(), "gpt_image": gpt_tryon.status(SHOP),
+            "face_restore": face, "admins": sorted(ADMINS), "items": len(db["items"]),
             "users": len(db["users"]), "stats": db["stats"],
             "last_items": [f'{k}: {v["title"]} — {v["price"]}' for k, v in list(db["items"].items())[-10:]]}
 
@@ -298,6 +304,21 @@ def sub_markup():
 
 
 # ---------------------------------------------------------------- инструкция для примерки по типу вещи
+def tryon_provider():
+    # Переключаем «Силу в Стиле»; другой магазин сохраняет свой прежний движок.
+    return _env("TRYON_PROVIDER", "gpt" if SHOP == "SVS" else "fashn").strip().lower()
+
+
+def tryon_ready():
+    provider = tryon_provider()
+    return gpt_tryon.ready(SHOP) if provider == "gpt" else (fashn.ready() if provider == "fashn" else False)
+
+
+def gpt_outfit(uid, items):
+    """Оригинальное фото клиента + все выбранные вещи в одном запросе."""
+    return gpt_tryon.run(user_photo(uid), [(it["title"], tryon_image(iid)) for iid, it in items], shop=SHOP)
+
+
 _KEEP = " Keep the person's face, body, pose, background and all their other clothes unchanged."
 _PROMPTS = [
     (r"^(СЕРЬГ|СЕР[ЁЕ]Ж|КАФФ)", "Put the earrings from the product photo on the person's ears at realistic, small scale."),
@@ -508,7 +529,7 @@ def flush_groups():
 
 # ---------------------------------------------------------------- покупатель
 DESCRIPTION = (f"Примерочная магазина «{BRAND}» {C['emoji']}\n\n"
-               "Примерьте любую вещь из нашего канала на себя — по своему фото, за 20 секунд. "
+               "Примерьте любую вещь из нашего канала на себя — по своему фото. "
                + ("Соберите образ, узнайте мнение стилиста и закажите с доставкой по России.\n\n" if SHOP == "SVS"
                   else "Соберите образ и закажите с доставкой по России.\n\n") +
                "Нажмите «Старт», чтобы начать.")
@@ -521,7 +542,7 @@ def welcome(name):
             "на себя, не выходя из дома.\n\n"
             "<b>Как это работает:</b>\n"
             "1️⃣ Откройте витрину и загрузите своё фото в полный рост\n"
-            "2️⃣ Нажмите «Примерить» на любой вещи — через 20 секунд увидите себя в ней\n"
+            "2️⃣ Нажмите «Примерить» на любой вещи и дождитесь готового изображения\n"
             + ("3️⃣ Соберите образ из нескольких вещей и спросите стилиста, как они сочетаются\n" if stylist().ready()
                else "3️⃣ Соберите образ из нескольких вещей и примерьте его целиком\n") +
             "4️⃣ Понравилось — оформите заказ прямо в витрине\n\n"
@@ -554,6 +575,8 @@ def show_catalog(chat, start=0):
 
 
 def try_on(chat, uid, iid, name):
+    if not tryon_ready():
+        return send(chat, "Примерочная настраивается, попробуйте чуть позже.")
     with _lock:
         db = _load()
         it = db["items"].get(iid)
@@ -569,36 +592,41 @@ def try_on(chat, uid, iid, name):
                               f"Понравилась вещь? Напишите {ASK}")
         u["used"] += 1
         _save(db)
-    if not fashn.ready():
-        return send(chat, "Примерочная настраивается, попробуйте чуть позже.")
-    send(chat, f"Примеряю <b>{it['title']}</b>… это займёт 15–20 секунд ⏳")
+    send(chat, f"Примеряю <b>{it['title']}</b>… создание изображения может занять пару минут ⏳")
     tg("sendChatAction", {"chat_id": chat, "action": "upload_photo"})
 
     def run():
         with _tryon_slots:
             try:
-                outs, used, secs = fashn.run(*tryon_request(it["title"], data_uri(user_photo(uid)),
-                                                            data_uri(tryon_image(iid))))
-                if not outs:
-                    raise RuntimeError("пустой ответ")
-                send_photo_bytes(chat, finish_tryon(uid, outs[0], [it["title"]]),
+                if tryon_provider() == "gpt":
+                    raw, used, secs = gpt_outfit(uid, [(iid, it)])
+                else:
+                    outs, used, secs = fashn.run(*tryon_request(it["title"], data_uri(user_photo(uid)),
+                                                                data_uri(tryon_image(iid))))
+                    if not outs:
+                        raise RuntimeError("пустой ответ")
+                    raw = finish_tryon(uid, outs[0], [it["title"]])
+                delivered = send_photo_bytes(chat, raw,
                                  f"<b>{it['title']}</b> — {money(it['price'])}"
                                  + (f"\nРазмеры: {it['sizes']}" if it.get("sizes") else ""),
                                  kb([btn("Заказать", f"ord:{iid}", style="success")],
                                     [btn("Примерить другую вещь", "cat", style="primary")]))
+                if not delivered.get("ok"):
+                    raise RuntimeError("Telegram не доставил результат примерки")
                 with _lock:
                     db = _load()
                     db["stats"]["tryons"] = db["stats"].get("tryons", 0) + 1
                     _save(db)
                 print("svs tryon", uid, iid, f"{secs:.0f}s", flush=True)
             except Exception as e:
-                print("svs tryon error", repr(e)[:300], flush=True)
+                print("svs tryon error", gpt_tryon.safe_error(e, SHOP), flush=True)
                 with _lock:
                     db = _load()
                     user(db, uid)["used"] = max(0, user(db, uid)["used"] - 1)   # неудача не считается
                     _save(db)
-                send(chat, "Не получилось примерить 😔 Попробуйте другое фото: в полный рост, лицом к камере, "
-                           "без сильного наклона. Если не выйдет — напишите " + ASK)
+                send(chat, e.public_message if isinstance(e, gpt_tryon.GPTImageError) else
+                     "Не получилось примерить 😔 Попробуйте другое фото: в полный рост, лицом к камере, "
+                     "без сильного наклона. Если не выйдет — напишите " + ASK)
     threading.Thread(target=run, daemon=True).start()
 
 
@@ -769,4 +797,5 @@ def start():
     threading.Thread(target=poll, daemon=True).start()
     threading.Thread(target=flush_groups, daemon=True).start()
     stylist().start()
+
 
