@@ -31,6 +31,8 @@ MANAGER = os.environ.get("SVS_MANAGER", "romanov_roman_svs").lstrip("@")
 DAILY = int(os.environ.get("SVS_DAILY_FREE", "3") or 3)
 SUBS_ONLY = os.environ.get("SVS_SUBSCRIBERS_ONLY", "1").strip() not in ("0", "no", "false", "")
 CHANNEL_LINK = os.environ.get("SVS_CHANNEL_LINK", "").strip()      # ссылка-приглашение в закрытый канал
+AUTO_APPROVE = os.environ.get("SVS_AUTO_APPROVE", "1").strip() not in ("0", "no", "false", "")
+JOIN_WELCOME = os.environ.get("SVS_JOIN_WELCOME", "1").strip() not in ("0", "no", "false", "")
 ADMINS = {int(x) for x in re.findall(r"-?\d+", os.environ.get("SVS_ADMIN_IDS") or os.environ.get("ADMIN_CHAT_ID") or "")}
 STORE = os.path.join(seedream.DIR, "svs.json")
 UDIR = os.path.join(seedream.DIR, "svs_users")          # фото покупателей — не публичные
@@ -442,11 +444,36 @@ def admin_cmd(chat, text):
         return send(chat, f"Удалил №{n}: {it['title']}" if it else "Нет такой вещи. Номера — /items")
     if text.startswith("/stats"):
         return send(chat, f"Вещей: {len(db['items'])}\nПокупателей: {len(db['users'])}\n"
+                          f"Одобрено заявок в канал: {db['stats'].get('joins', 0)}\n"
                           f"Примерок: {db['stats'].get('tryons', 0)}\nЗаявок: {db['stats'].get('orders', 0)}")
     return False
 
 
+def on_join_request(req):
+    """Заявка на вступление в канал: одобряем сразу и шлём приветствие с витриной."""
+    chat, frm = req.get("chat") or {}, req.get("from") or {}
+    cid = channel_id()
+    if not AUTO_APPROVE or (cid and str(chat.get("id")) != str(cid)):
+        return
+    r = tg("approveChatJoinRequest", {"chat_id": chat["id"], "user_id": frm["id"]})
+    if not r.get("ok"):
+        print("svs approve failed", r.get("description"), flush=True)
+        return
+    _subs_cache.pop(frm["id"], None)
+    with _lock:
+        db = _load()
+        db["stats"]["joins"] = db["stats"].get("joins", 0) + 1
+        _save(db)
+    if JOIN_WELCOME and req.get("user_chat_id"):
+        send(req["user_chat_id"], f"Добро пожаловать в <b>Сила в Стиле</b>, {frm.get('first_name') or 'друг'}! 🖤\n\n"
+                                  "Заявка одобрена. А ещё у нас есть примерочная: загрузите своё фото и примерьте "
+                                  "любую вещь из канала на себя — бесплатно для подписчиков.",
+             reply_markup=kb([app_btn("👕 Примерить на себя")]))
+
+
 def on_update(upd):
+    if upd.get("chat_join_request"):
+        return on_join_request(upd["chat_join_request"])
     if upd.get("channel_post") or upd.get("edited_channel_post"):
         return on_post(upd.get("channel_post") or upd.get("edited_channel_post"))
     cq = upd.get("callback_query")
@@ -501,7 +528,8 @@ def poll():
     print("svs polling as", me.get("username"), flush=True)
     offset = None
     while True:
-        q = {"timeout": 50, "allowed_updates": ["message", "callback_query", "channel_post", "edited_channel_post"]}
+        q = {"timeout": 50, "allowed_updates": ["message", "callback_query", "channel_post", "edited_channel_post",
+                                                "chat_join_request"]}
         if offset is not None:
             q["offset"] = offset
         res = tg("getUpdates", q, timeout=(10, 65))
