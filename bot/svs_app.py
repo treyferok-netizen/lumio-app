@@ -145,9 +145,7 @@ def _run(jid, uid, its):
             model = bot.data_uri(bot.user_photo(uid))
             for n, (iid, it) in enumerate(its, 1):
                 job["step"] = n
-                prompt = (f"Put only the {it['title'].lower()} from the product photo on the person. Ignore the mannequin "
-                          "and anything worn under the garment on the mannequin. Keep the person's face, body, pose, "
-                          "background and all other clothes they are wearing unchanged.")
+                prompt = bot.tryon_prompt(it["title"])
                 outs, _, _ = fashn.run("tryon-max", {"model_image": model,
                                                      "product_image": bot.data_uri(bot.item_image(iid)),
                                                      "prompt": prompt, "resolution": "1k",

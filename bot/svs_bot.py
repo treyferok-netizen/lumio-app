@@ -169,6 +169,33 @@ def item_image(iid):
     return raw
 
 
+# ---------------------------------------------------------------- инструкция для примерки по типу вещи
+_KEEP = " Keep the person's face, body, pose, background and all their other clothes unchanged."
+_PROMPTS = [
+    (r"^(КРОССОВ|КЕД|ТУФЛ|ЛОФЕР|МОКАСИН|БОТИН|САПОГ|СЛИП|ДЕРБИ|ОКСФОРД|ЧЕЛСИ|САНДАЛ|ШЛ[ЁЕ]П|ОБУВ)",
+     "Replace only the shoes the person is wearing with the shoes from the product photo. The new shoes must be a "
+     "realistic size: exactly the same length and height as the person's current shoes, proportional to their feet and "
+     "body, not oversized, not chunky, not enlarged. Keep the trouser hems falling over the shoes as before."),
+    (r"^(ОЧК)", "Put the glasses from the product photo on the person's face at realistic scale, fitted to their "
+                "head width, resting on the nose and ears."),
+    (r"^(ЧАС[ЫО]|БРАСЛЕТ)", "Put the watch/bracelet from the product photo on the person's wrist at realistic, "
+                            "small scale proportional to the wrist."),
+    (r"^(СУМК|РЮКЗАК|КЛАТЧ|БАРСЕТК|ПОРТФЕЛ)", "Make the person carry the bag from the product photo naturally, at "
+                                              "realistic size relative to their body."),
+    (r"^(КЕПК|ШАПК|БЕЙСБОЛК|ПАНАМ)", "Put the hat from the product photo on the person's head at realistic size."),
+    (r"^(РЕМ(ЕНЬ|НИ))", "Put the belt from the product photo on the person's waist at realistic width."),
+]
+
+
+def tryon_prompt(title):
+    t = (title or "").strip().upper()
+    for rx, text in _PROMPTS:
+        if re.match(rx, t):
+            return text + _KEEP
+    return (f"Put only the {t.lower()} from the product photo on the person. Ignore the mannequin and anything worn "
+            "under the garment on the mannequin. The garment must fit the person's body at realistic size." + _KEEP)
+
+
 # ---------------------------------------------------------------- разбор постов
 def parse(caption):
     """Вещь = пост с фото и строкой «Цена …» (любая категория). Без цены — не товар (розыгрыш, новость)."""
@@ -309,9 +336,7 @@ def try_on(chat, uid, iid, name):
     def run():
         with _tryon_slots:
             try:
-                prompt = (f"Put only the {it['title'].lower()} from the product photo on the person. Ignore the mannequin "
-                          "and anything worn under the garment on the mannequin. Keep the person's face, body, pose, "
-                          "background and their other clothes unchanged.")
+                prompt = tryon_prompt(it["title"])
                 outs, used, secs = fashn.run("tryon-max", {
                     "model_image": data_uri(user_photo(uid)), "product_image": data_uri(item_image(iid)),
                     "prompt": prompt, "resolution": "1k", "generation_mode": "fast", "output_format": "jpeg"})
