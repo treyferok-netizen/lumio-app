@@ -64,6 +64,8 @@ SUBS_ONLY = _env("SUBSCRIBERS_ONLY", "1").strip() not in ("0", "no", "false", ""
 CHANNEL_LINK = _env("CHANNEL_LINK").strip()      # ссылка-приглашение в закрытый канал
 AUTO_APPROVE = _env("AUTO_APPROVE", "1").strip() not in ("0", "no", "false", "")
 JOIN_WELCOME = _env("JOIN_WELCOME", "1").strip() not in ("0", "no", "false", "")
+NOTIFY_NEW = _env("NOTIFY_NEW", "1").strip() not in ("0", "no", "false", "", "off")     # 👋 новый человек в боте
+NOTIFY_SUBS = _env("NOTIFY_SUBS", "1").strip() not in ("0", "no", "false", "", "off")   # 📢 подписался на канал
 ADMINS = {int(x) for x in re.findall(r"-?\d+", _env("ADMIN_IDS") or os.environ.get("ADMIN_CHAT_ID") or "")}
 BOT_USERNAME = C["bot"]                          # уточняется через getMe при запуске
 ASK = f"@{MANAGER}" if MANAGER else "нам в этот чат"   # куда писать с вопросами
@@ -185,6 +187,78 @@ def kb(*rows):
 def send(chat, text, **kw):
     return tg("sendMessage", {"chat_id": chat, "text": text, "parse_mode": "HTML",
                               **{k: v for k, v in kw.items() if v is not None}})
+
+
+def who(u):
+    name = " ".join(x for x in [u.get("first_name"), u.get("last_name")] if x) or "Без имени"
+    return html.escape(name) + (f" (@{html.escape(u['username'])})" if u.get("username") else "") + f" #u{u.get('id')}"
+
+
+def notify_admins(text):
+    for admin in ADMINS:
+        try:
+            send(admin, text)
+        except Exception as e:
+            print(f"{SHOP.lower()} notify error", repr(e)[:200], flush=True)
+
+
+def _mark_old_users_seen():
+    """Один раз при обновлении: все, кто был в боте раньше, — не «новые» (иначе уведомления о каждом старом)."""
+    with _lock:
+        db = _load()
+        if db.get("seen_ready"):
+            return
+        for u in db["users"].values():
+            u["seen"] = 1
+        db["seen_ready"] = 1
+        _save(db)
+
+
+def note_visitor(tg_user, where):
+    """Первое появление человека в боте или витрине → уведомление админам (один раз на человека)."""
+    uid = (tg_user or {}).get("id")
+    if not uid or uid in ADMINS:
+        return
+    with _lock:
+        db = _load()
+        if not db.get("seen_ready"):
+            return
+        u = user(db, uid)
+        if u.get("seen"):
+            return
+        u["seen"] = 1
+        db["stats"]["visitors"] = db["stats"].get("visitors", 0) + 1
+        _save(db)
+    if not NOTIFY_NEW:
+        return
+
+    def run():
+        sub = is_subscriber(uid)
+        state = "подписан на канал ✅" if sub else ("ещё не подписан на канал" if sub is False else "")
+        notify_admins(f"👋 <b>Новый человек в боте</b> — {who(tg_user)}\n{where}" + (f" · {state}" if state else ""))
+    threading.Thread(target=run, daemon=True).start()
+
+
+def on_chat_member(upd):
+    """Кто-то вступил в канал (по заявке или по ссылке) → уведомление админам."""
+    cid = channel_id()
+    chat = upd.get("chat") or {}
+    if not cid or str(chat.get("id")) != str(cid):
+        return
+    old = (upd.get("old_chat_member") or {}).get("status")
+    new = (upd.get("new_chat_member") or {}).get("status")
+    member = (upd.get("new_chat_member") or {}).get("user") or {}
+    if member.get("is_bot") or old not in ("left", "kicked", None) or new not in ("member", "restricted"):
+        return
+    _subs_cache.pop(member.get("id"), None)
+    with _lock:
+        db = _load()
+        db["stats"]["subs"] = db["stats"].get("subs", 0) + 1
+        in_bot = str(member.get("id")) in db["users"]
+        _save(db)
+    if NOTIFY_SUBS:
+        how = "по заявке" if upd.get("via_join_request") else "по ссылке"
+        notify_admins(f"📢 <b>Новый подписчик канала</b> — {who(member)}\n{how}" + (" · уже был в боте" if in_bot else ""))
 
 
 def file_bytes(file_id):
@@ -886,6 +960,8 @@ def admin_cmd(chat, text):
     if text.startswith("/stats"):
         return send(chat, f"Вещей: {len(db['items'])}\nПокупателей: {len(db['users'])}\n"
                           f"Одобрено заявок в канал: {db['stats'].get('joins', 0)}\n"
+                          f"Новых в боте (с уведомлениями): {db['stats'].get('visitors', 0)}\n"
+                          f"Новых подписчиков канала: {db['stats'].get('subs', 0)}\n"
                           f"Примерок: {db['stats'].get('tryons', 0)}\nЗаявок: {db['stats'].get('orders', 0)}")
     return False
 
@@ -913,6 +989,8 @@ def on_join_request(req):
 
 
 def on_update(upd):
+    if upd.get("chat_member"):
+        return on_chat_member(upd["chat_member"])
     if upd.get("chat_join_request"):
         return on_join_request(upd["chat_join_request"])
     if upd.get("channel_post") or upd.get("edited_channel_post"):
@@ -958,6 +1036,12 @@ def on_update(upd):
         _color_edits.pop(chat, None)
     if is_admin and command == "/cancel":
         return send(chat, "Редактирование отменено.")
+    if not is_admin:
+        if text.startswith("/start"):
+            param = text.split(maxsplit=1)[1] if " " in text else ""
+            note_visitor(msg.get("from"), "нажал «Старт»" + (f" (ссылка: {html.escape(param[:40])})" if param else ""))
+        else:
+            note_visitor(msg.get("from"), "написал в бота")
     if text == "/" or command == "/help":
         return send(chat, command_help(is_admin))
     if is_admin and (msg.get("forward_origin") or msg.get("forward_from_chat")):
@@ -1053,7 +1137,7 @@ def poll():
     offset = None
     while True:
         q = {"timeout": 50, "allowed_updates": ["message", "callback_query", "channel_post", "edited_channel_post",
-                                                "chat_join_request"]}
+                                                "chat_join_request", "chat_member"]}
         if offset is not None:
             q["offset"] = offset
         res = tg("getUpdates", q, timeout=(10, 65))
@@ -1072,6 +1156,7 @@ def start():
     if not TOKEN:
         print(f"{SHOP.lower()} bot off ({SHOP}_BOT_TOKEN)", flush=True)
         return
+    _mark_old_users_seen()
     threading.Thread(target=poll, daemon=True).start()
     threading.Thread(target=flush_groups, daemon=True).start()
     stylist().start()

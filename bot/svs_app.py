@@ -267,6 +267,7 @@ def handle(method, path, query, headers, body):
         return _js(401, {"ok": False, "error": f"Откройте витрину из бота @{bot.BOT_USERNAME}"})
     uid = int(u["id"])
     if method == "GET" and path == "/svs/api/me":
+        bot.note_visitor(u, "открыл витрину")
         return _js(200, {"ok": True, "has_photo": bool(bot.user_photo(uid)), "left": left_today(uid),
                          "stylist": bool(stylist.ready()),
                          "max_items": MAX_ITEMS})
