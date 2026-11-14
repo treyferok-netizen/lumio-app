@@ -333,7 +333,11 @@ async function tryItems(ids){
     <div class="bar"><i id="tryBar"></i></div><div class="note">Обычно 15–20 секунд на вещь</div></div>`;
   openSheet("trySheet");
   const r = await api("/svs/api/tryon", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({items: ids})});
-  if (!r.ok){ if (r.error==="nophoto"){ ME.has_photo=false; renderMe(); pickPhoto(ids); return; } return tryFail(r.error); }
+  if (!r.ok){
+    if (r.error==="nophoto"){ ME.has_photo=false; renderMe(); pickPhoto(ids); return; }
+    if (r.error==="notsub") return notSub(r);
+    return tryFail(r.error);
+  }
   poll(r.job, r.total);
 }
 async function poll(job, total){
@@ -358,6 +362,12 @@ async function poll(job, total){
     return;
   }
   tryFail("Примерка заняла слишком много времени. Результат придёт в чат с ботом.");
+}
+function notSub(r){
+  $("tryBody").innerHTML = `<div class="loader"><div style="font-size:34px">🔒</div><div>${esc(r.text||"Примерка доступна подписчикам канала")}</div>
+    <div class="stack" style="width:100%">${r.link?`<button class="btn gold" id="subBtn">Подписаться на канал</button>`:""}
+    <button class="btn ghost" onclick="closeSheets()">Я подписался — закрыть</button></div></div>`;
+  if (r.link) $("subBtn").onclick = () => { try { tg.openTelegramLink(r.link); } catch(e){ location.href = r.link; } };
 }
 function tryFail(msg){
   $("tryBody").innerHTML = `<div class="loader"><div style="font-size:34px">😔</div><div>${esc(msg||"Не получилось")}</div>

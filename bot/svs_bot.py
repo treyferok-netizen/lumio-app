@@ -29,6 +29,8 @@ TOKEN = os.environ.get("SVS_BOT_TOKEN", "").strip()
 API = f"https://api.telegram.org/bot{TOKEN}/"
 MANAGER = os.environ.get("SVS_MANAGER", "romanov_roman_svs").lstrip("@")
 DAILY = int(os.environ.get("SVS_DAILY_FREE", "3") or 3)
+SUBS_ONLY = os.environ.get("SVS_SUBSCRIBERS_ONLY", "1").strip() not in ("0", "no", "false", "")
+CHANNEL_LINK = os.environ.get("SVS_CHANNEL_LINK", "").strip()      # ссылка-приглашение в закрытый канал
 ADMINS = {int(x) for x in re.findall(r"-?\d+", os.environ.get("SVS_ADMIN_IDS") or os.environ.get("ADMIN_CHAT_ID") or "")}
 STORE = os.path.join(seedream.DIR, "svs.json")
 UDIR = os.path.join(seedream.DIR, "svs_users")          # фото покупателей — не публичные
@@ -167,6 +169,50 @@ def item_image(iid):
     with open(p, "wb") as f:
         f.write(raw)
     return raw
+
+
+# ---------------------------------------------------------------- только для подписчиков канала
+_subs_cache = {}
+
+
+def channel_id():
+    """Канал берём из настроек, иначе — из постов, которые бот уже получил из канала."""
+    env = os.environ.get("SVS_CHANNEL_ID", "").strip()
+    if env:
+        return env
+    counts = {}
+    for it in _load()["items"].values():
+        cid = str(it.get("source", "")).split(":")[0]
+        if cid.startswith("-100"):
+            counts[cid] = counts.get(cid, 0) + 1
+    return max(counts, key=counts.get) if counts else None
+
+
+def is_subscriber(uid):
+    """True — подписан (или проверка выключена/невозможна, чтобы не ломать примерку)."""
+    if not SUBS_ONLY or uid in ADMINS:
+        return True
+    hit = _subs_cache.get(uid)
+    if hit and time.time() - hit[1] < 600:
+        return hit[0]
+    cid = channel_id()
+    if not cid:
+        return True
+    r = tg("getChatMember", {"chat_id": int(cid), "user_id": int(uid)})
+    if not r.get("ok"):
+        return True                    # бот не админ канала или Telegram недоступен — не мешаем покупателю
+    st = r["result"].get("status")
+    ok = st in ("creator", "administrator", "member") or (st == "restricted" and r["result"].get("is_member"))
+    _subs_cache[uid] = (ok, time.time())
+    return ok
+
+
+NOT_SUB = "Примерка доступна подписчикам канала «Сила в Стиле». Подпишитесь — и возвращайтесь примерять 🙌"
+
+
+def sub_markup():
+    return kb([btn("Подписаться на канал", url=CHANNEL_LINK, style="success")], [btn("Я подписался ✅", "cat")]) \
+        if CHANNEL_LINK else kb([btn("Я подписался ✅", "cat")])
 
 
 # ---------------------------------------------------------------- инструкция для примерки по типу вещи
@@ -321,6 +367,8 @@ def try_on(chat, uid, iid, name):
         u = user(db, uid)
         if not it:
             return send(chat, "Эта вещь уже снята с продажи.")
+        if not is_subscriber(uid):
+            return send(chat, NOT_SUB, reply_markup=sub_markup())
         if not user_photo(uid):
             return send(chat, "Сначала пришлите своё фото в полный рост — одним сообщением, как обычное фото.")
         if uid not in ADMINS and u["used"] >= DAILY:

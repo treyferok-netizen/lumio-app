@@ -114,6 +114,8 @@ def start_tryon(u, ids):
     ids = [str(i) for i in ids if str(i) in db["items"]][:MAX_ITEMS]
     if not ids:
         return _js(400, {"ok": False, "error": "Выберите вещи для примерки"})
+    if not bot.is_subscriber(uid):
+        return _js(403, {"ok": False, "error": "notsub", "text": bot.NOT_SUB, "link": bot.CHANNEL_LINK})
     clash = stylist.conflict([db["items"][i]["title"] for i in ids])
     if clash:
         return _js(400, {"ok": False, "error": clash})
