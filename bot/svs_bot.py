@@ -42,6 +42,11 @@ def _env(key, default=""):
     return os.environ.get(f"{SHOP}_{key}", default)
 
 
+def ai_stylist():
+    """Подключён настоящий ИИ-стилист (а не заглушка «две вещи одного типа»)."""
+    return hasattr(stylist(), "correct_color")
+
+
 def stylist():
     """ИИ-стилист этого магазина (для «Силы в Стиле» — svs_stylist.py, у женского — заглушка из shops.py)."""
     st = globals().get("_STYLIST")
@@ -593,7 +598,7 @@ def flush_groups():
 # ---------------------------------------------------------------- покупатель
 DESCRIPTION = (f"Примерочная магазина «{BRAND}» {C['emoji']}\n\n"
                "Примерьте любую вещь из нашего канала на себя — по своему фото. "
-               + ("Соберите образ, узнайте мнение стилиста и закажите с доставкой по России.\n\n" if SHOP == "SVS"
+               + ("Соберите образ, узнайте мнение стилиста и закажите с доставкой по России.\n\n" if os.environ.get("OPENAI_API_KEY")
                   else "Соберите образ и закажите с доставкой по России.\n\n") +
                "Нажмите «Старт», чтобы начать.")
 SHORT_DESCRIPTION = f"Примерьте вещи «{BRAND}» на себя по своему фото — бесплатно для подписчиков канала."
@@ -754,7 +759,7 @@ def _color_reply(chat, text):
 
 
 def _color_callback(chat, uid, data):
-    if uid not in ADMINS or uid != chat or SHOP != "SVS":
+    if uid not in ADMINS or uid != chat or not ai_stylist():
         return
     action, token = data.split(":", 1)
     state = _color_edits.get(chat)
@@ -776,8 +781,8 @@ def _color_callback(chat, uid, data):
 
 
 def _description_command(chat, text):
-    if SHOP != "SVS":
-        return send(chat, "Исправление описаний пока доступно в «Силе в Стиле».")
+    if not ai_stylist():
+        return send(chat, "ИИ-стилист в этом магазине выключен.")
     match = re.fullmatch(r"/(passport|color)(?:@\w+)?(?:\s+([\s\S]+))?", text)
     if not match:
         return send(chat, "Команды: /passport 16 — описание; /color 16 — изменить цвет вещи №16")
@@ -829,8 +834,36 @@ def _description_command(chat, text):
                       f"Исправить цвет: /color {iid}")
 
 
+def looks_report(db):
+    """Образы сезона блоками (каждый — целое сообщение без разрыва HTML-тегов)."""
+    import style_looks
+    name = lambda i: f'{db["items"][i]["title"]} (№{i})' if i in db["items"] else f"№{i} — уже нет в каталоге"
+    blocks, gaps = ["<b>Образы сезона осень–зима 2026/27</b> — по ним работает стилист."], []
+    for lk in style_looks.looks(SHOP):
+        if lk["set"]:
+            items = ", ".join(name(i) for i in lk["set"] + lk["extra"])
+            blocks.append(f"<b>{html.escape(lk['name'])}</b> — {html.escape(lk['palette'])}\n{html.escape(items)}")
+        if lk.get("missing"):
+            gaps.append(f"• {html.escape(lk['name'])}: {html.escape(lk['missing'])}")
+    if gaps:
+        blocks.append("<b>Чего не хватает в каталоге</b> (для закупки):\n" + "\n".join(gaps))
+    messages, cur = [], ""
+    for block in blocks:
+        if cur and len(cur) + len(block) > 3800:
+            messages.append(cur)
+            cur = ""
+        cur = (cur + "\n\n" + block) if cur else block
+    return messages + ([cur] if cur else [])
+
+
 def admin_cmd(chat, text):
     db = _load()
+    if text.startswith("/looks"):
+        if not ai_stylist():
+            return send(chat, "ИИ-стилист в этом магазине выключен.")
+        for message in looks_report(db):                    # лимит сообщения Telegram — 4096 символов
+            send(chat, message)
+        return
     if text.startswith(("/passport", "/color")):
         return _description_command(chat, text)
     if text.startswith("/items"):
@@ -928,7 +961,7 @@ def on_update(upd):
         return send(chat, command_help(is_admin))
     if is_admin and (msg.get("forward_origin") or msg.get("forward_from_chat")):
         return on_post(msg, admin_chat=chat)
-    if is_admin and text.startswith(("/items", "/del", "/stats", "/clean", "/passport", "/color")):
+    if is_admin and text.startswith(("/items", "/del", "/stats", "/clean", "/passport", "/color", "/looks")):
         return admin_cmd(chat, text)
     if is_admin and chat in _color_edits:
         if not text:
@@ -976,8 +1009,9 @@ def command_menu(admin=False):
             {"command": "clean", "description": "Очистить фото товара: /clean номер"},
             {"command": "del", "description": "Удалить товар: /del номер"},
         ])
-        if SHOP == "SVS":
+        if ai_stylist():
             commands.extend([
+                {"command": "looks", "description": "Образы сезона и чего не хватает в каталоге"},
                 {"command": "passport", "description": "Описание вещи по номеру: /passport 16"},
                 {"command": "color", "description": "Изменить цвет вещи по номеру: /color 16"},
                 {"command": "cancel", "description": "Отменить текущее редактирование"},
@@ -989,8 +1023,8 @@ def command_help(admin=False):
     rows = [f"/{it['command']} — {html.escape(it['description'])}" for it in command_menu(admin)]
     if admin:
         rows.extend(["", "Примеры:", "/clean 14", "/del 14"])
-        if SHOP == "SVS":
-            rows.extend(["/passport 16", "/color 16 — выбрать вещь и ввести цвет следующим сообщением",
+        if ai_stylist():
+            rows.extend(["/looks — образы сезона из нашего каталога", "/passport 16", "/color 16 — выбрать вещь и ввести цвет следующим сообщением",
                          "/color 16 | коричневый — сохранить сразу", "/cancel — отменить редактирование"])
     return "Доступные команды:\n\n" + "\n".join(rows)
 

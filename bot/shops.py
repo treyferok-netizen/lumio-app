@@ -81,8 +81,14 @@ def load_all():
     for shop in SHOPS:
         if shop == "SVS":
             continue
-        stylist = _stub_stylist()
-        bot = _load(f"{shop.lower()}_bot", "svs_bot.py", {"SHOP": shop, "_STYLIST": stylist})
+        stub = _stub_stylist()
+        bot = _load(f"{shop.lower()}_bot", "svs_bot.py", {"SHOP": shop, "_STYLIST": stub})
+        try:        # ИИ-стилист магазина (тот же svs_stylist.py со своим каталогом); не загрузился — заглушка
+            stylist = _load(f"{shop.lower()}_stylist", "svs_stylist.py", {"SHOP": shop, "_BOT": bot})
+        except Exception as e:
+            print(shop, "stylist load error", repr(e)[:200], flush=True)
+            stylist = stub
+        bot._STYLIST = stylist
         app = _load(f"{shop.lower()}_app", "svs_app.py", {"SHOP": shop, "_BOT": bot, "_STYLIST": stylist})
         BOTS[shop], APPS[SHOPS[shop]["path"]] = bot, app
     return APPS
